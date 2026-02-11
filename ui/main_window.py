@@ -23,6 +23,10 @@ from PyQt5.QtGui import QIcon, QKeySequence
 from core.logger import logger
 from core.config import ConfigLoader
 
+# 导入自定义组件
+from ui.widgets.video_preview import VideoPreviewWidget
+from ui.widgets.status_panel import StatusPanel
+
 
 class MainWindow(QMainWindow):
     """
@@ -99,13 +103,17 @@ class MainWindow(QMainWindow):
     def create_monitor_tab(self):
         """创建实时监控标签页"""
         monitor_widget = QWidget()
-        layout = QVBoxLayout(monitor_widget)
+        layout = QHBoxLayout(monitor_widget)
 
-        # TODO: 添加视频预览和状态面板
-        placeholder = QLabel("实时监控标签页")
-        placeholder.setAlignment(Qt.AlignCenter)
-        layout.addWidget(placeholder)
+        # 创建视频预览组件
+        self.video_preview = VideoPreviewWidget()
+        layout.addWidget(self.video_preview, stretch=2)
 
+        # 创建状态面板组件
+        self.status_panel = StatusPanel()
+        layout.addWidget(self.status_panel, stretch=1)
+
+        monitor_widget.setLayout(layout)
         self.tab_widget.addTab(monitor_widget, "实时监控")
 
     def create_param_tab(self):
