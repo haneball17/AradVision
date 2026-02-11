@@ -16,10 +16,23 @@ from typing import Optional, Tuple, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-import mss
-import mss.tools
-import cv2
+# 可选导入依赖
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    np = None  # type: ignore
+
+try:
+    import mss
+    import mss.tools
+    import cv2
+    HAS_CAPTURE_DEPS = True
+except ImportError:
+    HAS_CAPTURE_DEPS = False
+    mss = None  # type: ignore
+    cv2 = None  # type: ignore
 
 from core.config import CaptureConfig
 from core.logger import logger
@@ -308,15 +321,84 @@ class CaptureEngine:
 
 # ==================== 工厂函数 ====================
 
-def create_capture_engine(config: Optional[CaptureConfig] = None) -> CaptureEngine:
+class MockCaptureEngine:
+    """
+    Mock 捕获引擎（用于测试）
+
+    生成随机图像帧，无需 mss/cv2 依赖。
+    """
+
+    def __init__(self, config: Optional[CaptureConfig] = None):
+        """初始化 Mock 捕获引擎"""
+        self.config = config or CaptureConfig()
+        self.is_running = False
+        self.stats = CaptureStats()
+        self._frame_count = 0
+
+    def start(self) -> None:
+        """启动 Mock 捕获引擎"""
+        self.is_running = True
+        logger.info("Mock 捕获引擎启动（生成随机图像帧）")
+
+    def stop(self) -> None:
+        """停止 Mock 捕获引擎"""
+        self.is_running = False
+        logger.info("Mock 捕获引擎已停止")
+
+    def get_frame(self) -> Optional[np.ndarray]:
+        """
+        生成随机图像帧
+
+        Returns:
+            随机生成的 BGR 图像（1920x1080x3）
+        """
+        if not self.is_running:
+            return None
+
+        # 模拟捕获延迟
+        latency = 5.0  # 5ms 模拟延迟
+        time.sleep(latency / 1000.0)
+
+        # 生成随机图像
+        if HAS_NUMPY:
+            frame = np.random.randint(0, 255, (1080, 1920, 3), dtype=np.uint8)
+        else:
+            frame = None
+
+        # 更新统计信息
+        self._frame_count += 1
+        self.stats.frame_count = self._frame_count
+        self.stats.avg_latency = latency
+        self.stats.fps = 30.0  # 模拟 30 FPS
+
+        return frame
+
+    def get_stats(self) -> CaptureStats:
+        """获取统计信息"""
+        return self.stats
+
+    def reset_stats(self) -> None:
+        """重置统计信息"""
+        self.stats = CaptureStats()
+        self._frame_count = 0
+
+    def __repr__(self) -> str:
+        return f"MockCaptureEngine(running={self.is_running}, frames={self._frame_count})"
+
+
+def create_capture_engine(
+    config: Optional[CaptureConfig] = None,
+    use_mock: bool = False
+) -> "CaptureEngine":
     """
     创建捕获引擎实例（工厂函数）
 
     Args:
         config: 截图配置，None 则使用默认配置
+        use_mock: 是否使用 Mock 引擎（用于测试）
 
     Returns:
-        CaptureEngine 实例
+        CaptureEngine 或 MockCaptureEngine 实例
 
     Examples:
         >>> from core.capture import create_capture_engine
@@ -327,11 +409,22 @@ def create_capture_engine(config: Optional[CaptureConfig] = None) -> CaptureEngi
         from core.config import get_config
         config = get_config().capture
 
+    # 检查依赖是否可用
+    if use_mock or not HAS_CAPTURE_DEPS:
+        logger.info("使用 Mock 捕获引擎（无需 mss/cv2）")
+        return MockCaptureEngine(config)
+
+    # 使用真实捕获引擎
+    if not HAS_NUMPY:
+        logger.warning("numpy 不可用，使用 Mock 捕获引擎")
+        return MockCaptureEngine(config)
+
     return CaptureEngine(config)
 
 
 __all__ = [
     "CaptureEngine",
     "CaptureStats",
+    "MockCaptureEngine",
     "create_capture_engine"
 ]

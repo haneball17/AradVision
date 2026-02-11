@@ -104,8 +104,8 @@ class AradVisionApp:
         logger.info("初始化系统模块...")
 
         try:
-            # 1. 初始化截图引擎
-            self._capture_engine = create_capture_engine()
+            # 1. 初始化截图引擎（使用 Mock 模式，无需 mss）
+            self._capture_engine = create_capture_engine(use_mock=True)
             self._capture_engine.start()
             logger.info("✓ 截图引擎启动成功")
 
