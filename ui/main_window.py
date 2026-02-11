@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QStatusBar, QMenuBar, QToolBar,
     QPushButton, QAction, QStyle
 )
