@@ -1,0 +1,231 @@
+# ==================== AradVision .gitignore ====================
+# Python 项目 Git 忽略规则
+# 版本: v0.1.2
+# 更新: 2026-02-11
+# ================================================================
+
+# ---------------------- Python 编译文件 ----------------------
+# 字节编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C 扩展
+*.so
+
+# 分发 / 打包
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ---------------------- 虚拟环境 ----------------------
+# 虚拟环境目录
+venv/
+ENV/
+env/
+.venv
+.env
+virtualenv/
+
+# Conda
+conda-env/
+
+# Poetry
+poetry.lock
+
+# ---------------------- IDE 配置 ----------------------
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Spyder
+.spyderproject
+.spyproject
+
+# ---------------------- 日志文件 ----------------------
+# 日志目录（运行时生成）
+logs/
+*.log
+log/
+*.log.*
+
+# ---------------------- 模型与数据 ----------------------
+# YOLO 模型文件（训练后生成，通常很大）
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.engine
+!models/.gitkeep
+!models/README.md
+
+# 训练数据集
+dataset/
+data/
+datasets/
+!data/.gitkeep
+!data/README.md
+
+# 训练结果
+runs/
+training_results/
+*.runs
+
+# ---------------------- 测试与覆盖率 ----------------------
+# 测试覆盖率报告
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ---------------------- 临时文件 ----------------------
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+*.swo
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---------------------- 配置文件 ----------------------
+# 本地配置（敏感信息）
+configs/local.yaml
+configs/local_*.yaml
+configs/*_local.yaml
+.env
+.env.local
+.env.*.local
+
+# 用户特定配置
+configs/user_config.yaml
+configs/my_config.yaml
+
+# ---------------------- 截图与录制 ----------------------
+# 游戏截图（开发调试）
+screenshots/
+screenshots/*.png
+screenshots/*.jpg
+debug_screenshots/
+
+# 录屏文件
+recordings/
+*.mp4
+*.avi
+*.mkv
+
+# ---------------------- 文档生成 ----------------------
+# Sphinx 文档
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# ---------------------- 性能分析 ----------------------
+# 性能分析文件
+*.prof
+*.pstats
+profile/
+
+# 内存分析
+*.memory
+
+# ---------------------- 数据库 ----------------------
+# SQLite 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# ---------------------- CI/CD ----------------------
+# GitHub Actions
+.github/workflows/*.log
+
+# ---------------------- 其他 ----------------------
+# 备份文件
+*.orig
+*.rej
+
+# 补丁文件
+*.patch
+
+# 压缩文件（排除项目文档包）
+*.7z
+*.rar
+*.tar.gz
+*.zip
+!docs/*.7z
+!docs/*.zip
+
+# ---------------------- 项目特定 ----------------------
+# AradVision 特定忽略项
+
+# 调试输出
+debug_output/
+debug_frames/
+
+# YOLO 训练临时文件
+yolo_training/
+yolo_cache/
+
+# 测试图片
+test_images/
+test_screenshots/
+
+# 窗口捕获缓存
+window_cache/
+
+# ---------------------- 保留文件（例外） ----------------------
+# 如果需要忽略整个目录但保留某些文件，使用 ! 前缀
+# 示例：
+# configs/
+# !configs/config.yaml
+# !configs/README.md
