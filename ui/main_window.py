@@ -26,6 +26,8 @@ from core.config import ConfigLoader
 # 导入自定义组件
 from ui.widgets.video_preview import VideoPreviewWidget
 from ui.widgets.status_panel import StatusPanel
+from ui.widgets.parameter_panel import ParameterPanel
+from ui.widgets.log_panel import LogPanel, LogHandler
 
 
 class MainWindow(QMainWindow):
@@ -121,10 +123,9 @@ class MainWindow(QMainWindow):
         param_widget = QWidget()
         layout = QVBoxLayout(param_widget)
 
-        # TODO: 添加参数配置面板
-        placeholder = QLabel("参数配置标签页")
-        placeholder.setAlignment(Qt.AlignCenter)
-        layout.addWidget(placeholder)
+        # 创建参数配置面板
+        self.param_panel = ParameterPanel()
+        layout.addWidget(self.param_panel)
 
         self.tab_widget.addTab(param_widget, "参数配置")
 
@@ -133,10 +134,9 @@ class MainWindow(QMainWindow):
         log_widget = QWidget()
         layout = QVBoxLayout(log_widget)
 
-        # TODO: 添加日志面板
-        placeholder = QLabel("系统日志标签页")
-        placeholder.setAlignment(Qt.AlignCenter)
-        layout.addWidget(placeholder)
+        # 创建系统日志面板
+        self.log_panel = LogPanel()
+        layout.addWidget(self.log_panel)
 
         self.tab_widget.addTab(log_widget, "系统日志")
 

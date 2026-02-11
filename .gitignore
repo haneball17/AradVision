@@ -208,6 +208,9 @@ profile/
 # ---------------------- 项目特定 ----------------------
 # AradVision 特定忽略项
 
+# Claude Code 会话上下文
+.claude/
+
 # 调试输出
 debug_output/
 debug_frames/
