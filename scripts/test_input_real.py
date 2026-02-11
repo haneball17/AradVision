@@ -132,7 +132,7 @@ class InputTester:
                     logger.info(f"✓ 攻击 {i+1}/{count} 执行成功")
                 else:
                     logger.error(f"✗ 攻击 {i+1}/{count} 执行失败")
-                return False
+                    return False
             except Exception as e:
                 logger.error(f"✗ 攻击执行异常: {e}")
                 return False
