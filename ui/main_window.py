@@ -15,7 +15,7 @@ from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QStatusBar, QMenuBar, QToolBar,
-    QPushButton, QAction, QStyle
+    QPushButton, QAction, QStyle, QMessageBox
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
@@ -184,29 +184,70 @@ class MainWindow(QMainWindow):
 
         # 文件菜单
         file_menu = menubar.addMenu("文件")
-        file_menu.addAction("新建配置", self.new_config)
-        file_menu.addAction("打开配置", self.open_config)
-        file_menu.addAction("保存配置", self.save_config)
+        new_config_action = QAction("新建配置", self)
+        new_config_action.triggered.connect(self.new_config)
+        file_menu.addAction(new_config_action)
+
+        open_config_action = QAction("打开配置", self)
+        open_config_action.triggered.connect(self.open_config)
+        file_menu.addAction(open_config_action)
+
+        save_config_action = QAction("保存配置", self)
+        save_config_action.triggered.connect(self.save_config)
+        file_menu.addAction(save_config_action)
+
         file_menu.addSeparator()
-        file_menu.addAction("退出", self.close)
+
+        exit_action = QAction("退出", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
 
         # 控制菜单
         control_menu = menubar.addMenu("控制")
-        control_menu.addAction("启动系统", self.start_system, QKeySequence("F5"))
-        control_menu.addAction("停止系统", self.stop_system, QKeySequence("F12"))
-        control_menu.addAction("暂停/继续", self.toggle_pause)
+
+        start_system_action = QAction("启动系统", self)
+        start_system_action.triggered.connect(self.start_system)
+        start_system_action.setShortcut(QKeySequence("F5"))
+        control_menu.addAction(start_system_action)
+
+        stop_system_action = QAction("停止系统", self)
+        stop_system_action.triggered.connect(self.stop_system)
+        stop_system_action.setShortcut(QKeySequence("F12"))
+        control_menu.addAction(stop_system_action)
+
+        toggle_pause_action = QAction("暂停/继续", self)
+        toggle_pause_action.triggered.connect(self.toggle_pause)
+        control_menu.addAction(toggle_pause_action)
 
         # 视图菜单
         view_menu = menubar.addMenu("视图")
-        view_menu.addAction("切换到实时监控", lambda: self.tab_widget.setCurrentIndex(0))
-        view_menu.addAction("切换到参数配置", lambda: self.tab_widget.setCurrentIndex(1))
-        view_menu.addAction("切换到系统日志", lambda: self.tab_widget.setCurrentIndex(2))
-        view_menu.addAction("切换主题", self.toggle_theme)
+
+        view_monitor_action = QAction("切换到实时监控", self)
+        view_monitor_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(0))
+        view_menu.addAction(view_monitor_action)
+
+        view_param_action = QAction("切换到参数配置", self)
+        view_param_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        view_menu.addAction(view_param_action)
+
+        view_log_action = QAction("切换到系统日志", self)
+        view_log_action.triggered.connect(lambda: self.tab_widget.setCurrentIndex(2))
+        view_menu.addAction(view_log_action)
+
+        toggle_theme_action = QAction("切换主题", self)
+        toggle_theme_action.triggered.connect(self.toggle_theme)
+        view_menu.addAction(toggle_theme_action)
 
         # 帮助菜单
         help_menu = menubar.addMenu("帮助")
-        help_menu.addAction("文档", self.show_docs)
-        help_menu.addAction("关于", self.show_about)
+
+        show_docs_action = QAction("文档", self)
+        show_docs_action.triggered.connect(self.show_docs)
+        help_menu.addAction(show_docs_action)
+
+        show_about_action = QAction("关于", self)
+        show_about_action.triggered.connect(self.show_about)
+        help_menu.addAction(show_about_action)
 
     def init_toolbar(self):
         """初始化工具栏"""
