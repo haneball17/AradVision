@@ -37,6 +37,8 @@ AradVision is a Python project organized by domain modules:
 - Prefer Conventional Commit prefixes seen in history: `feat`, `fix`, `docs`, `chore` (optionally with scope, e.g., `feat(yangmq17): ...`).
 - Keep commits focused and atomic; include related test updates in the same commit.
 - Git commit summaries/descriptions must be written in Chinese and include the contributor role (e.g., `角色: 架构与逻辑工程师（yangmq17）`).
+- Each new commit must have its own standalone work-summary file under `docs/` (do not keep appending to a single summary file).
+- Recommended naming pattern for summaries: `docs/工作总结_YYYY-MM-DD_<topic>.md` (example: `docs/工作总结_2026-02-11_输入模块联调.md`).
 - PRs should include: change summary, touched paths, test commands/results, risk notes, and rollback plan.
 
 ## Security & Configuration Tips
