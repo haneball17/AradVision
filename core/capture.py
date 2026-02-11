@@ -202,8 +202,18 @@ class CaptureEngine:
         Raises:
             WindowNotFoundError: 找不到窗口
         """
-        import win32gui
-        import win32con
+        # 可选导入 win32gui
+        try:
+            import win32gui
+            import win32con
+            HAS_WIN32 = True
+        except ImportError:
+            HAS_WIN32 = False
+            logger.warning("win32gui 不可用，将使用主显示器捕获")
+
+        if not HAS_WIN32:
+            self._hwnd = None
+            return
 
         def enum_windows_callback(hwnd, windows):
             """枚举窗口回调"""
@@ -232,9 +242,8 @@ class CaptureEngine:
         """设置捕获区域"""
         if self._hwnd is not None:
             # 窗口捕获（Windows 平台）
-            import win32gui
-
             try:
+                import win32gui
                 left, top, right, bottom = win32gui.GetWindowRect(self._hwnd)
                 width = right - left
                 height = bottom - top
@@ -245,8 +254,10 @@ class CaptureEngine:
                     "width": width,
                     "height": height
                 }
-                logger.debug(f"窗口捕获区域: {self._monitor}")
+                logger.info(f"窗口捕获区域: {self._monitor}")
                 return
+            except ImportError:
+                logger.warning("win32gui 不可用，使用主显示器")
             except Exception as e:
                 logger.warning(f"无法获取窗口位置: {e}，使用主显示器")
 
@@ -258,7 +269,7 @@ class CaptureEngine:
         else:
             self._monitor = monitors[0]
 
-        logger.debug(f"显示器捕获区域: {self._monitor}")
+        logger.info(f"主显示器捕获区域: {self._monitor}")
 
     def _update_stats(self, latency: float, frame_size: int) -> None:
         """
