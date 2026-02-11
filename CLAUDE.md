@@ -255,3 +255,72 @@ from data.models import GameObject
 - `fix: Fix Y-axis alignment tolerance too strict`
 - `docs: Update installation documentation`
 - `refactor: Refactor InputDriver class`
+
+---
+
+## Development Workflow [MANDATORY]
+
+### After Code Changes
+
+**Every time project code is modified**, follow this workflow:
+
+#### 1. Summarize Work
+- Create/update work summary document
+- Document what was done and why
+- List files modified and changes made
+- Record any bugs fixed
+
+#### 2. Git Commit
+- **ALWAYS commit** after code changes
+- Use proper commit message format (see above)
+- Include `Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>`
+- Verify commit was successful
+
+#### 3. Push to Remote
+- **ALWAYS push** after successful commit
+- Use `git push` to sync with remote
+- Verify push completed without errors
+
+### Workflow Template
+
+```bash
+# Step 1: Check status
+git status
+
+# Step 2: Add files
+git add <modified_files>
+
+# Step 3: Commit with proper message
+git commit -m "<type>: <description>
+
+# Step 4: Push to remote
+git push
+```
+
+### Commit Type Guidelines
+
+| Type | When to Use | Example |
+|-------|--------------|----------|
+| `feat` | New feature | `feat: Add skill list drag-drop sorting` |
+| `fix` | Bug fix | `fix: Repair missing QHBoxLayout import` |
+| `docs` | Documentation only | `docs: Update testing guide` |
+| `refactor` | Code refactoring | `refactor: Simplify config loader` |
+| `test` | Adding tests | `test: Add coordinate mapper tests` |
+| `style` | Code style changes | `style: Fix indentation in main.py` |
+
+### Prohibited Actions
+
+- ❌ **NEVER leave uncommitted changes** when ending session
+- ❌ **NEVER push without committing first**
+- ❌ **NEVER use generic commit messages** (e.g., "update", "fix bug")
+- ❌ **NEVER commit unrelated changes together** (group by feature/fix)
+
+### Session End Checklist
+
+Before ending any development session, ensure:
+
+- [ ] All code changes committed
+- [ ] All commits pushed to remote
+- [ ] Work summary documented
+- [ ] Working tree clean (`git status` shows nothing)
+- [ ] Remote branch up to date (`git status` shows "up to date")
