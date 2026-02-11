@@ -5,7 +5,7 @@ DNF 视觉辅助自动化系统 - 基于计算机视觉的游戏辅助工具。
 
 Author: haneball17, yangmq17
 Date: Day 1
-Version: 0.1.2
+Version: 0.1.3
 """
 
 import sys
@@ -268,7 +268,7 @@ def main():
     parser.add_argument(
         "-v", "--version",
         action="version",
-        version="AradVision 0.1.2"
+        version="AradVision 0.1.3"
     )
 
     args = parser.parse_args()
