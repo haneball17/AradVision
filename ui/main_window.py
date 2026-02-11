@@ -289,6 +289,13 @@ class MainWindow(QMainWindow):
         self.status_label.setText("系统运行中...")
         self.system_state_label.setText("状态: RUNNING")
 
+        # 显示提示信息
+        QMessageBox.information(
+            self,
+            "系统启动",
+            "系统已启动！\n\n当前为 UI 框架阶段，核心引擎线程尚未实现。\n实际功能将在 EngineThread 完成后可用。"
+        )
+
     def stop_system(self):
         """停止系统"""
         logger.info("停止系统")

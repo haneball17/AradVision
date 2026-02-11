@@ -11,7 +11,8 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QGroupBox, QLabel, QSlider,
     QComboBox, QCheckBox, QSpinBox,
-    QDoubleSpinBox, QPushButton, QMessageBox, QFileDialog
+    QDoubleSpinBox, QPushButton, QMessageBox, QFileDialog,
+    QScrollArea
 )
 from PyQt5.QtCore import Qt
 
@@ -45,7 +46,15 @@ class ParameterPanel(QWidget):
 
     def init_ui(self):
         """初始化UI"""
-        main_layout = QVBoxLayout()
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # 创建容器 widget 和布局
+        container = QWidget()
+        main_layout = QVBoxLayout(container)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(15)
 
@@ -85,7 +94,15 @@ class ParameterPanel(QWidget):
         main_layout.addLayout(apply_buttons)
 
         main_layout.addStretch()
-        self.setLayout(main_layout)
+
+        # 设置滚动区域
+        scroll_area.setWidget(container)
+
+        # 设置主布局
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.addWidget(scroll_area)
+        self.setLayout(outer_layout)
 
     def create_capture_group(self) -> QGroupBox:
         """创建捕获设置组"""
