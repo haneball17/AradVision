@@ -1,0 +1,80 @@
+# AradVision 配置文件
+# 说明：修改配置后需重启应用生效
+
+# ==================== 检测器配置 ====================
+detector:
+  # 检测器类型: mock（模拟）, yolo（真实YOLO）
+  type: mock
+
+  # YOLO 模型路径
+  model_path: models/yolov8n_dnf.pt
+
+  # 置信度阈值（0.0 - 1.0），低于此值的检测结果会被过滤
+  confidence_threshold: 0.6
+
+  # NMS（非极大值抑制）阈值（0.0 - 1.0）
+  nms_threshold: 0.45
+
+  # 输入图像尺寸 [width, height]
+  input_size: [640, 640]
+
+  # 是否使用 GPU 加速
+  use_gpu: true
+
+# ==================== 截图配置 ====================
+capture:
+  # 游戏窗口标题（用于查找窗口）
+  window_title: 地下城与勇士
+
+  # 窗口类名（备用）
+  window_class: D3D Window
+
+  # 目标帧率（FPS）
+  target_fps: 30
+
+  # 捕获分辨率
+  width: 1920
+  height: 1080
+
+  # 显示器索引（0=主显示器，1=第二显示器...）
+  monitor_index: 1
+
+# ==================== 输入配置 ====================
+input:
+  # 输入驱动类型: mock（模拟）, real（真实硬件输入）
+  type: mock
+
+  # 输入延迟范围（秒）- 用于反检测
+  delay_min: 0.05
+  delay_max: 0.15
+
+  # 是否启用随机化（延迟、操作间隔等）
+  randomization: true
+
+# ==================== 战斗配置 ====================
+combat:
+  # Y轴对齐容差（像素）- DNF战斗需要Y轴对齐
+  y_tolerance: 15
+
+  # 攻击距离（像素）
+  attack_range: 150
+
+  # 移动速度倍率（1.0 = 正常速度）
+  move_speed: 1.0
+
+  # 攻击间隔（秒）
+  attack_interval: 0.3
+
+# ==================== 系统配置 ====================
+system:
+  # 调试模式（启用后输出详细日志）
+  debug_mode: false
+
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+
+  # 是否启用调试覆盖层（显示检测框、FPS等）
+  enable_overlay: false
+
+  # 紧急停止按键
+  kill_switch_key: F12

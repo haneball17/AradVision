@@ -10,7 +10,6 @@ Dependencies: None
 from dataclasses import dataclass, field
 from typing import Tuple, List, Optional, Dict, Any
 from enum import Enum
-import time
 
 
 class CommandType(Enum):
@@ -259,7 +258,7 @@ class GameContext:
         return [m for m in self.monsters if self.hero.distance_to(m) <= range_px]
 
 
-@dataclass
+@dataclass(init=False)
 class Command:
     """
     动作指令
@@ -272,10 +271,63 @@ class Command:
         metadata: 附加元数据
     """
     action_type: CommandType
-    direction: Optional[Tuple[int, int]] = None
-    key_code: Optional[str] = None
-    duration: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    direction: Optional[Tuple[int, int]]
+    key_code: Optional[str]
+    duration: float
+    metadata: Dict[str, Any]
+
+    def __init__(
+        self,
+        action_type: Optional[CommandType] = None,
+        direction: Optional[Tuple[int, int]] = None,
+        key_code: Optional[str] = None,
+        duration: float = 0.0,
+        metadata: Optional[Dict[str, Any]] = None,
+        cmd_type: Optional[CommandType] = None,
+    ) -> None:
+        """
+        初始化动作指令。
+
+        为了兼容不同模块的命名约定，构造时同时支持：
+        - action_type（当前项目主命名）
+        - cmd_type（接口契约中的命名）
+        """
+        if action_type is None and cmd_type is None:
+            raise ValueError("必须提供 action_type 或 cmd_type")
+
+        if (
+            action_type is not None
+            and cmd_type is not None
+            and action_type != cmd_type
+        ):
+            raise ValueError("action_type 与 cmd_type 不一致，无法判定真实指令类型")
+
+        resolved_action_type = action_type if action_type is not None else cmd_type
+        if resolved_action_type is None:
+            raise ValueError("指令类型解析失败")
+
+        if duration < 0:
+            raise ValueError("duration 不能为负数")
+
+        self.action_type = resolved_action_type
+        self.direction = direction
+        self.key_code = key_code
+        self.duration = duration
+        self.metadata = metadata.copy() if metadata is not None else {}
+
+    @property
+    def cmd_type(self) -> CommandType:
+        """
+        兼容属性：cmd_type 等价于 action_type。
+
+        目的：避免后续模块按接口文档使用 `cmd_type` 时触发属性错误。
+        """
+        return self.action_type
+
+    @cmd_type.setter
+    def cmd_type(self, value: CommandType) -> None:
+        """兼容写入：允许通过 cmd_type 更新指令类型。"""
+        self.action_type = value
 
     def is_movement(self) -> bool:
         """是否为移动指令"""

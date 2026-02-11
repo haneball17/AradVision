@@ -64,10 +64,11 @@ class TestMockInputDriver:
         """测试统计指令数量"""
         driver.tap("x")  # ATTACK
         driver.tap("a")  # ATTACK
-        # hold -> MOVE
+        driver.hold("RIGHT", 0.1)  # MOVE
 
         assert driver.get_command_count() == 3
         assert driver.get_command_count(CommandType.ATTACK) == 2
+        assert driver.get_command_count(CommandType.MOVE) == 1
 
     def test_stop_all(self, driver):
         """测试停止所有输入"""

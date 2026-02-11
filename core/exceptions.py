@@ -33,6 +33,11 @@ class InputError(AradVisionError):
     pass
 
 
+class InvalidKeyError(InputError):
+    """无效按键错误"""
+    pass
+
+
 class StateError(AradVisionError):
     """状态机错误"""
     pass

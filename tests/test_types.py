@@ -165,3 +165,29 @@ class TestCommand:
         assert cmd.is_movement()
         assert cmd.direction == (1, 0)
         assert cmd.duration == 0.5
+
+    def test_command_supports_cmd_type_alias(self):
+        """测试cmd_type命名兼容"""
+        cmd = Command(
+            cmd_type=CommandType.SKILL,
+            key_code="a"
+        )
+
+        assert cmd.action_type == CommandType.SKILL
+        assert cmd.cmd_type == CommandType.SKILL
+
+    def test_cmd_type_setter_updates_action_type(self):
+        """测试通过cmd_type设置指令类型"""
+        cmd = Command(action_type=CommandType.MOVE)
+        cmd.cmd_type = CommandType.ATTACK
+
+        assert cmd.action_type == CommandType.ATTACK
+        assert cmd.cmd_type == CommandType.ATTACK
+
+    def test_command_type_conflict_should_raise(self):
+        """测试action_type和cmd_type冲突时抛错"""
+        with pytest.raises(ValueError):
+            Command(
+                action_type=CommandType.MOVE,
+                cmd_type=CommandType.ATTACK
+            )
