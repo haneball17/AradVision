@@ -7,10 +7,32 @@ Priority: P1
 Dependencies: 所有模块
 """
 
-import pytest
-import numpy as np
+import sys
 from pathlib import Path
-from vision.mock_detector import MockYoloDetector
+
+# 添加项目根目录到 Python 路径
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+import pytest
+
+# 延迟导入依赖（可选导入）
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    HAS_VISION = False
+    print("Warning: numpy 未安装，部分测试将被跳过")
+else:
+    # numpy 可用，尝试导入 vision 模块
+    try:
+        from vision.mock_detector import MockYoloDetector
+        HAS_VISION = True
+    except ImportError:
+        HAS_VISION = False
+        print("Warning: vision 模块依赖缺失，部分测试将被跳过")
+
 from input.mock_driver import MockInputDriver
 from core.types import GameObject, BBox, GameContext, Command, CommandType
 
@@ -23,6 +45,8 @@ def sample_frame():
     Returns:
         800x600 BGR图像
     """
+    if not HAS_NUMPY:
+        pytest.skip("numpy 未安装，跳过此测试")
     return np.zeros((600, 800, 3), dtype=np.uint8)
 
 
@@ -67,6 +91,8 @@ def mock_detector():
     Returns:
         MockYoloDetector实例
     """
+    if not HAS_VISION:
+        pytest.skip("vision 模块不可用，跳过此测试")
     return MockYoloDetector(mock_mode="fixed")
 
 
