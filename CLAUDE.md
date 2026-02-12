@@ -264,6 +264,27 @@ from data.models import GameObject
 
 **Every time project code is modified**, follow this workflow:
 
+#### 0. Code Validation [MANDATORY]
+**在提交代码之前，必须进行语法和引用检查**：
+
+```bash
+# 检查 Python 文件语法
+python3 -m py_compile <modified_file>.py
+
+# 检查多个文件
+find . -name "*.py" -path "./<module>/*" -exec python3 -m py_compile {} \;
+
+# 或使用 pylint/flake8 进行更深入的检查（可选）
+pylint <modified_file>.py
+flake8 <modified_file>.py
+```
+
+**验证要求**：
+- ✅ 所有修改的 `.py` 文件必须通过 `py_compile` 检查
+- ✅ 如果存在导入错误（如 `NameError: name 'Signal' is not defined`），必须修复后才能提交
+- ✅ 确保信号类使用 `pyqtSignal` 而非 `Signal`
+- ✅ 确保类型提示正确，避免循环引用
+
 #### 1. Summarize Work
 - Create/update work summary document
 - Document what was done and why
@@ -284,6 +305,9 @@ from data.models import GameObject
 ### Workflow Template
 
 ```bash
+# Step 0: Code Validation (MANDATORY)
+python3 -m py_compile <modified_files>
+
 # Step 1: Check status
 git status
 
@@ -319,6 +343,7 @@ git push
 
 Before ending any development session, ensure:
 
+- [ ] All modified files passed `py_compile` syntax check
 - [ ] All code changes committed
 - [ ] All commits pushed to remote
 - [ ] Work summary documented
