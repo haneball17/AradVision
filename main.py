@@ -283,6 +283,9 @@ class AradVisionApp:
                 # 检查 PyQt5 是否可用（导入成功则可用）
                 HAS_PYQT_AVAILABLE = True
 
+                # 先创建 QApplication（必须在任何 Qt 组件之前！）
+                app = QApplication(sys.argv)
+
                 # 创建主窗口
                 main_window = MainWindow()
 
