@@ -44,6 +44,7 @@ class CaptureConfig:
     width: int = 1920
     height: int = 1080
     monitor_index: int = 1
+    use_mock: bool = False  # 是否使用 Mock 捕获引擎
 
 
 @dataclass

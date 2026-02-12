@@ -147,8 +147,11 @@ class AradVisionApp:
         logger.info("初始化系统模块...")
 
         try:
-            # 1. 初始化截图引擎（根据 use_mock 参数选择）
-            self._capture_engine = create_capture_engine(use_mock=self.use_mock)
+            # 1. 初始化截图引擎（从配置文件读取 use_mock 设置）
+            # 如果命令行指定了 use_mock，则优先使用命令行参数
+            config_use_mock = self.config_loader.config.capture.use_mock if hasattr(self.config_loader.config.capture, 'use_mock') else True
+            use_mock = self.use_mock or config_use_mock
+            self._capture_engine = create_capture_engine(use_mock=use_mock)
             self._capture_engine.start()
             engine_type = "Mock" if self.use_mock else "真实"
             logger.info(f"✓ {engine_type} 截图引擎启动成功")
