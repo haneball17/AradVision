@@ -143,6 +143,7 @@ class EngineThread(QThread):
             # 传递 CaptureConfig 对象而非 AppConfig
             capture_config = self.config.capture if hasattr(self.config, 'capture') else None
             capture_engine = create_capture_engine(capture_config, use_mock=True)
+            capture_engine.start()  # 启动捕获引擎
             detector = MockYoloDetector(mock_mode="random")
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
             fsm = BotFSM()
@@ -218,6 +219,9 @@ class EngineThread(QThread):
             self.signals.error_occurred.emit(f"引擎初始化错误: {e}")
 
         finally:
+            # 清理资源
+            if 'capture_engine' in locals():
+                capture_engine.stop()
             logger.info(f"引擎线程结束，共处理 {self._frame_count} 帧")
             self.running = False
 
