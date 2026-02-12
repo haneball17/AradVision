@@ -132,6 +132,7 @@ class ParameterPanel(QWidget):
         y_tolerance_layout = QVBoxLayout()
         y_label = QLabel("Y 轴对齐容差:")
         self.y_tolerance_value_label = QLabel("15")
+        y_label_layout = QHBoxLayout()
         y_label_layout.addWidget(y_label)
         y_label_layout.addWidget(self.y_tolerance_value_label)
         y_label_layout.addStretch()
@@ -152,6 +153,7 @@ class ParameterPanel(QWidget):
         attack_range_layout = QVBoxLayout()
         range_label = QLabel("攻击范围:")
         self.attack_range_value_label = QLabel("100")
+        range_label_layout = QHBoxLayout()
         range_label_layout.addWidget(range_label)
         range_label_layout.addWidget(self.attack_range_value_label)
         range_label_layout.addStretch()
@@ -202,6 +204,7 @@ class ParameterPanel(QWidget):
         conf_label_layout.addWidget(conf_label)
         conf_label_layout.addWidget(self.conf_value_label)
         conf_label_layout.addStretch()
+        layout.addLayout(conf_label_layout)
 
         self.conf_slider = QSlider(Qt.Horizontal)
         self.conf_slider.setRange(10, 90)
@@ -211,8 +214,7 @@ class ParameterPanel(QWidget):
         self.conf_slider.valueChanged.connect(
             lambda v: self.conf_value_label.setText(f"{v/100:.2f}")
         )
-        conf_layout.addWidget(self.conf_slider)
-        layout.addLayout(conf_layout)
+        layout.addWidget(self.conf_slider)
 
         # 房间清空超时
         timeout_label_layout = QHBoxLayout()
@@ -221,6 +223,7 @@ class ParameterPanel(QWidget):
         timeout_label_layout.addWidget(timeout_label)
         timeout_label_layout.addWidget(self.timeout_value_label)
         timeout_label_layout.addStretch()
+        layout.addLayout(timeout_label_layout)
 
         self.timeout_slider = QSlider(Qt.Horizontal)
         self.timeout_slider.setRange(1, 10)
@@ -230,8 +233,7 @@ class ParameterPanel(QWidget):
         self.timeout_slider.valueChanged.connect(
             lambda v: self.timeout_value_label.setText(f"{v}.0 秒")
         )
-        timeout_layout.addWidget(self.timeout_slider)
-        layout.addLayout(timeout_layout)
+        layout.addWidget(self.timeout_slider)
 
         group.setLayout(layout)
         return group
