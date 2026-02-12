@@ -53,10 +53,15 @@ except ImportError:
         HAS_WORLD_MODEL = False
 
 # 延迟导入 PyQt5（仅 UI 模式需要）
-PyQt5 = None
+_QtApplication = None
+_QTimer = None
 try:
-    from PyQt5.QtWidgets import QApplication
-    from PyQt5.QtCore import QTimer
+    # 使用 as 别名避免变量名冲突
+    from PyQt5.QtWidgets import QApplication as QtWidgetsApp
+    from PyQt5.QtCore import QTimer as QtCoreTimer
+    # 导入成功后保存模块引用
+    _QtApplication = QtWidgetsApp
+    _QTimer = QtCoreTimer
 except ImportError:
     pass
 
@@ -271,7 +276,7 @@ class AradVisionApp:
                 logger.info("UI 模式运行，启动 Qt 应用...")
 
                 # 检查 PyQt5 是否可用
-                if PyQt5 is None:
+                if not HAS_PYQT:
                     logger.error("PyQt5 未安装，无法启动 UI 模式")
                     logger.info("回退到控制台模式...")
                     self._ui_mode = False
