@@ -265,25 +265,55 @@ from data.models import GameObject
 **Every time project code is modified**, follow this workflow:
 
 #### 0. Code Validation [MANDATORY]
-**在提交代码之前，必须进行语法和引用检查**：
+
+**重要说明**：`py_compile` 只检查语法，不检测运行时错误！
+
+| 错误类型 | `py_compile` | 运行时检测 |
+|-----------|--------------|-------------|
+| 语法错误（缩进、括号） | ✅ | - |
+| 导入错误（模块不存在） | ❌ | ✅ |
+| 属性错误（对象无某属性） | ❌ | ✅ |
+| 类型错误（参数类型不匹配） | ❌ | ✅ |
+| 逻辑错误 | ❌ | ✅ |
+
+**多层检查策略**（从快到慢）：
 
 ```bash
-# 检查 Python 文件语法
+# ========== 层级 1：语法检查（必做，最快）==========
 python3 -m py_compile <modified_file>.py
 
-# 检查多个文件
-find . -name "*.py" -path "./<module>/*" -exec python3 -m py_compile {} \;
+# 批量检查
+find . -name "*.py" -path "./ui/*" -exec python3 -m py_compile {} \;
 
-# 或使用 pylint/flake8 进行更深入的检查（可选）
-pylint <modified_file>.py
+# ========== 层级 2：导入检查（推荐）==========
+# 尝试导入模块以发现导入错误
+python3 -c "import <module_name>; print('✓ 导入成功')"
+
+# 检查 main.py
+python3 -c "import main; print('✓ main.py 导入成功')"
+
+# ========== 层级 3：静态分析（可选，较慢）==========
+# pylint - 全面的代码分析
+pylint <modified_file>.py --errors-only
+
+# flake8 - PEP 8 和基本错误
 flake8 <modified_file>.py
+
+# mypy - 类型检查
+mypy <modified_file>.py --no-error-summary
+
+# ========== 层级 4：实际运行（最可靠）==========
+# 对于有 --ui 参数的代码，必须实际运行测试
+python main.py --ui --help  # 仅检查参数解析
+python main.py --ui          # 实际运行测试
 ```
 
 **验证要求**：
 - ✅ 所有修改的 `.py` 文件必须通过 `py_compile` 检查
-- ✅ 如果存在导入错误（如 `NameError: name 'Signal' is not defined`），必须修复后才能提交
+- ✅ 涉及模块导入的代码必须通过导入测试
+- ✅ UI 相关代码必须实际运行 `python main.py --ui` 测试
 - ✅ 确保信号类使用 `pyqtSignal` 而非 `Signal`
-- ✅ 确保类型提示正确，避免循环引用
+- ✅ 确保对象属性访问正确（如 `config.capture.target_fps`）
 
 #### 1. Summarize Work
 - Create/update work summary document
