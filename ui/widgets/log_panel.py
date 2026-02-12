@@ -269,6 +269,15 @@ class LogPanel(QWidget):
         self.update_stats()
         logger.info("日志已清除")
 
+    def append_error(self, error_message: str):
+        """
+        添加错误消息（用于 error_occurred 信号）
+
+        Args:
+            error_message: 错误消息
+        """
+        self.add_log("ERROR", error_message)
+
     def export_logs(self):
         """导出日志到文件"""
         from PyQt5.QtWidgets import QFileDialog

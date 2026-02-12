@@ -187,13 +187,14 @@ class StatusPanel(QWidget):
             seconds = run_seconds % 60
             self.run_time_label.setText(f"运行时长: {minutes:02d}:{seconds:02d}")
 
-        # 更新检测信息
-        if "monsters" in status:
-            self.monster_label.setText(f"怪物: {status['monsters']}")
-        if "items" in status:
-            self.item_label.setText(f"物品: {status['items']}")
-        if "doors" in status:
-            self.door_label.setText(f"门: {status['doors']}")
+        # 更新检测信息（支持两种键名：monster_count/monsters）
+        monster_count = status.get("monster_count") or status.get("monsters", 0)
+        item_count = status.get("item_count") or status.get("items", 0)
+        door_count = status.get("door_count") or status.get("doors", 0)
+
+        self.monster_label.setText(f"怪物: {monster_count}")
+        self.item_label.setText(f"物品: {item_count}")
+        self.door_label.setText(f"门: {door_count}")
 
         # 更新英雄检测
         hero_detected = status.get("hero_detected", False)
