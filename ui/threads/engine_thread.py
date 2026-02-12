@@ -153,7 +153,11 @@ class EngineThread(QThread):
             self._frame_count = 0
 
             # 获取配置
-            target_fps = self.config.get("capture", {}).get("target_fps", 30)
+            # 支持 AppConfig 对象或字典
+            if hasattr(self.config, 'capture'):
+                target_fps = self.config.capture.target_fps
+            else:
+                target_fps = self.config.get("capture", {}).get("target_fps", 30)
             frame_time = 1.0 / target_fps
 
             # 主循环
