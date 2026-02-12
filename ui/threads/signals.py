@@ -20,25 +20,25 @@ class EngineSignals(QObject):
     """
 
     # 帧信号 (30 FPS) - 携带 OpenCV 图像数据
-    frame_ready = Signal(np.ndarray)
+    frame_ready = pyqtSignal(object)
 
     # 状态信号 (5 Hz) - 携带状态字典
-    status_update = Signal(dict)
+    status_update = pyqtSignal(dict)
 
     # 日志信号 - 携带日志级别和消息
-    log_message = Signal(str, str)  # (level, message)
+    log_message = pyqtSignal(str, str)  # (level, message)
 
     # 错误信号 - 携带错误信息
-    error_occurred = Signal(str)
+    error_occurred = pyqtSignal(str)
 
     # 系统状态信号
-    system_started = Signal()
-    system_stopped = Signal()
-    system_paused = Signal()
-    system_resumed = Signal()
+    system_started = pyqtSignal()
+    system_stopped = pyqtSignal()
+    system_paused = pyqtSignal()
+    system_resumed = pyqtSignal()
 
     # 参数更新信号
-    params_updated = Signal(dict)
+    params_updated = pyqtSignal(dict)
 
 
 class StatusData:
