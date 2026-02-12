@@ -18,20 +18,13 @@ from core.config import ConfigLoader
 # 导入核心模块
 try:
     from core.capture import create_capture_engine
-    from vision.detector_factory import create_detector
-    from logic.world_model import WorldModel
-    from logic.bot_fsm import BotFSM
-    from input.input_driver import InputDriver
-except ImportError as e:
-    logger.warning(f"核心模块导入失败: {e}")
-    logger.warning("将使用 Mock 模式")
-    # Mock 导入
-    from core.capture import create_capture_engine
-    from vision.detector_factory import create_detector
     from vision.mock_detector import MockYoloDetector
     from logic.world_model import WorldModel
     from logic.bot_fsm import BotFSM
     from input.mock_driver import MockInputDriver
+except ImportError as e:
+    logger.warning(f"核心模块导入失败: {e}")
+    logger.warning("将使用 Mock 模式")
 
 
 class EngineSignals(QObject):
@@ -148,10 +141,10 @@ class EngineThread(QThread):
         try:
             # 初始化核心引擎
             capture_engine = create_capture_engine(self.config)
-            detector = create_detector(self.config)
-            world_model = WorldModel()
-            fsm = BotFSM(world_model)
-            input_driver = InputDriver()
+            detector = MockYoloDetector(mock_mode="random")
+            world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
+            fsm = BotFSM()
+            input_driver = MockInputDriver()
 
             logger.info("所有核心模块初始化完成")
 
