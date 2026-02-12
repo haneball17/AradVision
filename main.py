@@ -276,7 +276,8 @@ class AradVisionApp:
                 logger.info("UI 模式运行，启动 Qt 应用...")
 
                 # UI 模式需要 PyQt5，直接导入
-                from PyQt5.QtWidgets import QApplication
+                # 注意：导入顺序很重要！QApplication 必须在 MainWindow 之前导入
+                from PyQt5.QtWidgets import QApplication, QMainWindow
                 from ui.main_window import MainWindow
 
                 # 检查 PyQt5 是否可用（导入成功则可用）
