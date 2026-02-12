@@ -52,6 +52,14 @@ except ImportError:
         HAS_ENGINE_THREAD = False
         HAS_WORLD_MODEL = False
 
+# 延迟导入 PyQt5（仅 UI 模式需要）
+PyQt5 = None
+try:
+    from PyQt5.QtWidgets import QApplication
+    from PyQt5.QtCore import QTimer
+except ImportError:
+    pass
+
 # 导入决策层模块
 from logic.world_model import WorldModel
 from logic.bot_fsm import BotFSM, BotState
@@ -258,21 +266,61 @@ class AradVisionApp:
             # 进入主循环
             self.is_running = True
 
-            # UI 模式：启动引擎线程并等待
+            # UI 模式：启动 Qt 应用和主窗口
             if self._ui_mode:
-                logger.info("UI 模式运行，EngineThread 处理主循环")
+                logger.info("UI 模式运行，启动 Qt 应用...")
 
-                # 启动引擎线程
-                if self._engine_thread and not self._engine_thread.isRunning():
-                    logger.info("启动引擎线程...")
-                    self._engine_thread.start()
+                # 检查 PyQt5 是否可用
+                if PyQt5 is None:
+                    logger.error("PyQt5 未安装，无法启动 UI 模式")
+                    logger.info("回退到控制台模式...")
+                    self._ui_mode = False
+                    self._main_loop()
+                    return
 
-                # 等待引擎线程结束或用户停止
-                while self.is_running:
-                    if self._engine_thread and not self._engine_thread.isRunning():
-                        logger.info("引擎线程已停止")
-                        break
-                    time.sleep(0.1)
+                # 创建 Qt 应用
+                app = QApplication([])
+                from ui.main_window import MainWindow
+
+                # 创建主窗口
+                main_window = MainWindow()
+
+                # 连接引擎线程信号到主窗口
+                if self._engine_thread:
+                    # 连接 frame_ready 信号（视频预览）
+                    self._engine_thread.signals.frame_ready.connect(
+                        main_window.video_preview.update_frame
+                    )
+                    # 连接 status_update 信号（状态面板）
+                    self._engine_thread.signals.status_update.connect(
+                        main_window.status_panel.update_status
+                    )
+                    # 连接 log_message 信号（日志面板）
+                    self._engine_thread.signals.log_message.connect(
+                        main_window.log_panel.append_log
+                    )
+                    # 连接 error_occurred 信号
+                    self._engine_thread.signals.error_occurred.connect(
+                        main_window.log_panel.append_error
+                    )
+
+                    # 启动引擎线程
+                    if not self._engine_thread.isRunning():
+                        logger.info("启动引擎线程...")
+                        self._engine_thread.start()
+
+                    # 显示主窗口
+                    main_window.show()
+
+                    # Qt 事件循环
+                    logger.info("Qt 事件循环启动...")
+                    app.exec_()
+
+                    logger.info("Qt 应用已退出，停止引擎线程...")
+                    if self._engine_thread.isRunning():
+                        self._engine_thread.stop()
+                    self.is_running = False
+                    return
             else:
                 # 控制台模式：正常运行原有主循环
                 self._main_loop()
