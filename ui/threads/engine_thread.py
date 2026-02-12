@@ -139,8 +139,14 @@ class EngineThread(QThread):
         logger.info("引擎线程开始运行")
 
         try:
-            # 初始化核心引擎
-            capture_engine = create_capture_engine(use_mock=True)
+            # 初始化核心引擎（从配置读取是否使用 Mock）
+            config_use_mock = False
+            if hasattr(self.config, 'capture') and hasattr(self.config.capture, 'use_mock'):
+                config_use_mock = self.config.capture.use_mock
+            elif isinstance(self.config, dict):
+                config_use_mock = self.config.get("capture", {}).get("use_mock", False)
+
+            capture_engine = create_capture_engine(use_mock=config_use_mock)
             capture_engine.start()  # 启动捕获引擎
             detector = MockYoloDetector(mock_mode="random")
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
