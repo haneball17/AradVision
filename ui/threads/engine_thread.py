@@ -140,7 +140,9 @@ class EngineThread(QThread):
 
         try:
             # 初始化核心引擎
-            capture_engine = create_capture_engine(self.config)
+            # 传递 CaptureConfig 对象而非 AppConfig
+            capture_config = self.config.capture if hasattr(self.config, 'capture') else None
+            capture_engine = create_capture_engine(capture_config, use_mock=True)
             detector = MockYoloDetector(mock_mode="random")
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
             fsm = BotFSM()
