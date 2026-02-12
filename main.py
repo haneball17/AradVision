@@ -318,7 +318,6 @@ class AradVisionApp:
 
                     # Qt 事件循环
                     logger.info("Qt 事件循环启动...")
-                    app = QApplication([])
                     app.exec_()
 
                     logger.info("Qt 应用已退出，停止引擎线程...")

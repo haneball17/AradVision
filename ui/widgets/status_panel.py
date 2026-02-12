@@ -125,7 +125,7 @@ class StatusPanel(QWidget):
         self.state_history_labels = []
         for i in range(5):
             label = QLabel(f"  {i+1}. STOPPED")
-            label.setStyleSheet("color: #66666;")
+            label.setStyleSheet("color: #888888;")
             layout.addWidget(label)
             self.state_history_labels.append(label)
 
