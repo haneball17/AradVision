@@ -31,14 +31,26 @@ try:
 except ImportError:
     HAS_VISION = False
 
-# 导入 UI 模块（PyQt5）
+# 导入 UI 集成模块
 try:
-    from ui.threads.engine_thread import EngineThread, create_engine_thread
-    HAS_ENGINE_THREAD = True
+    from ui.integration import (
+        HAS_PYQT,
+        HAS_ENGINE_THREAD,
+        HAS_WORLD_MODEL,
+        create_ui_engine_thread,
+        get_ui_update_handlers,
+        connect_ui_signals,
+        setup_ui_mode,
+        is_ui_mode
+    )
+    HAS_PYQT = HAS_PYQT
+    HAS_ENGINE_THREAD = HAS_ENGINE_THREAD
+    HAS_WORLD_MODEL = HAS_WORLD_MODEL
 except ImportError:
-    HAS_ENGINE_THREAD = False
-    logger.warning("EngineThread 不可用（缺少 PyQt5），UI 模式将禁用")
-    logger.warning("vision 模块不可用，检测功能将不可用")
+        logger.warning("UI 集成模块不可用：PyQt5 缺失或导入失败")
+        HAS_PYQT = False
+        HAS_ENGINE_THREAD = False
+        HAS_WORLD_MODEL = False
 
 # 导入决策层模块
 from logic.world_model import WorldModel
@@ -98,6 +110,7 @@ class AradVisionApp:
 
         # 引擎线程（仅 UI 模式）
         self._engine_thread: Optional["ui.threads.engine_thread.EngineThread"] = None
+        self._ui_handlers: dict = {}
 
         # 初始化日志
         setup_logger(log_level="INFO")
@@ -161,10 +174,62 @@ class AradVisionApp:
             logger.info("所有模块初始化完成")
             logger.info("=" * 60)
 
+            # 初始化 UI 模式（如果启用）
+            self._initialize_ui_mode()
+
         except Exception as e:
             logger.error(f"模块初始化失败: {e}", exc_info=True)
             self.shutdown()
             raise
+
+    def _initialize_ui_mode(self) -> None:
+        """初始化 UI 模式"""
+        if not self.use_ui:
+            return
+
+        if not HAS_PYQT:
+            logger.error("UI 模式请求但 PyQt5 不可用，回退到控制台模式")
+            return
+
+        logger.info("UI 模式启动，创建引擎线程...")
+
+        try:
+            # 导入 UI 集成模块
+            from ui.integration import (
+                create_ui_engine_thread,
+                get_ui_update_handlers,
+                connect_ui_signals,
+                setup_ui_mode
+            )
+
+            # 获取配置字典
+            config = self.config_loader.config
+
+            # 获取 UI 更新处理器
+            handlers = get_ui_update_handlers(config)
+            self._ui_handlers = handlers
+
+            # 创建引擎线程
+            self._engine_thread = create_ui_engine_thread(config)
+            if not self._engine_thread:
+                raise RuntimeError("引擎线程创建失败")
+
+            # 连接信号
+            if not connect_ui_signals(self._engine_thread, config):
+                raise RuntimeError("信号连接失败")
+
+            # 设置 UI 模式到 WorldModel
+            if not setup_ui_mode(self._world_model, config):
+                raise RuntimeError("UI 模式设置失败")
+
+            # 标记 UI 模式
+            self._ui_mode = True
+            logger.info("✓ UI 引擎线程初始化完成")
+
+        except Exception as e:
+            logger.error(f"UI 模式初始化失败: {e}", exc_info=True)
+            # 继续以控制台模式运行
+            self._ui_mode = False
 
     def run(self) -> None:
         """
@@ -192,7 +257,25 @@ class AradVisionApp:
 
             # 进入主循环
             self.is_running = True
-            self._main_loop()
+
+            # UI 模式：启动引擎线程并等待
+            if self._ui_mode:
+                logger.info("UI 模式运行，EngineThread 处理主循环")
+
+                # 启动引擎线程
+                if self._engine_thread and not self._engine_thread.isRunning():
+                    logger.info("启动引擎线程...")
+                    self._engine_thread.start()
+
+                # 等待引擎线程结束或用户停止
+                while self.is_running:
+                    if self._engine_thread and not self._engine_thread.isRunning():
+                        logger.info("引擎线程已停止")
+                        break
+                    time.sleep(0.1)
+            else:
+                # 控制台模式：正常运行原有主循环
+                self._main_loop()
 
         except EmergencyStopException:
             logger.warning("收到紧急停止信号 (F12)")
@@ -359,6 +442,15 @@ class AradVisionApp:
         logger.info("正在关闭 AradVision...")
         self.is_running = False
 
+        # 停止引擎线程（UI 模式）
+        if self._ui_mode and self._engine_thread:
+            if self._engine_thread.isRunning():
+                logger.info("停止引擎线程...")
+                self._engine_thread.stop()
+                # 等待线程结束
+                self._engine_thread.wait(timeout=3000)
+                logger.info("✓ 引擎线程已停止")
+
         # 停止输入驱动
         if self._input_driver:
             self._input_driver.stop_all()
@@ -425,7 +517,8 @@ def main():
     try:
         app = AradVisionApp(
             config_path=args.config,
-            use_mock=not args.no_mock
+            use_mock=not args.no_mock,
+            use_ui=args.ui
         )
         app.run()
     except Exception as e:
