@@ -6,6 +6,22 @@
 Author: haneball17
 Date: 2026-02-11
 """
+# 尝试导入 cv2，如果不可用则跳过相关功能
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+import numpy as np
+from PyQt5.QtWidgets import QLabel
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QImage, QPixmap, QPainter
+
+# 如果 cv2 不可用，使用 Mock 模式
+if not HAS_CV2:
+    import logging
+    logging.warning("cv2 (OpenCV) 未安装，视频预览使用占位符模式")
 
 import cv2
 import numpy as np

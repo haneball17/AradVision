@@ -4,8 +4,14 @@
 显示系统运行状态信息。
 
 Author: haneball17
-Date: 2026-02-11
+Date: 2026-06-02
 """
+# 尝试导入 cv2，如果不可用则跳过相关功能
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -98,7 +104,6 @@ class StatusPanel(QWidget):
         self.run_time_label = QLabel("运行时长: 00:00:00")
         info_layout.addWidget(self.frame_count_label)
         info_layout.addWidget(self.run_time_label)
-        info_layout.addStretch()
         layout.addLayout(info_layout)
 
         group.setLayout(layout)
@@ -106,145 +111,107 @@ class StatusPanel(QWidget):
 
     def create_state_group(self) -> QGroupBox:
         """创建决策状态组"""
-        group = QGroupBox("🤖 决策状态")
+        group = QGroupBox("📊 决策状态")
         layout = QVBoxLayout()
 
         # 当前状态
-        self.state_label = QLabel("当前状态: STOPPED")
-        self.state_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(self.state_label)
-
-        # 持续时长
-        self.duration_label = QLabel("持续时长: 0.0 秒")
-        layout.addWidget(self.duration_label)
+        state_header = QLabel("当前状态: STOPPED")
+        layout.addWidget(state_header)
 
         # 状态历史
-        self.history_label = QLabel("状态历史: -")
-        layout.addWidget(self.history_label)
+        history_label = QLabel("状态历史:")
+        layout.addWidget(history_label)
 
+        self.state_history_labels = []
+        for i in range(5):
+            label = QLabel(f"  {i+1}. STOPPED")
+            label.setStyleSheet("color: #66666;")
+            layout.addWidget(label)
+            self.state_history_labels.append(label)
+
+        layout.addStretch()
         group.setLayout(layout)
         return group
 
     def create_detection_group(self) -> QGroupBox:
         """创建检测信息组"""
-        group = QGroupBox("👁️ 检测信息")
+        group = QGroupBox("🔍 检测信息")
         layout = QVBoxLayout()
 
-        # 英雄
-        self.hero_label = QLabel("👤 英雄: ✗ 未检测")
-        layout.addWidget(self.hero_label)
+        self.monster_label = QLabel("怪物: 0")
+        self.item_label = QLabel("物品: 0")
+        self.door_label = QLabel("门: 0")
+        self.hero_label = QLabel("英雄: --")
 
-        # 怪物
-        self.monster_label = QLabel("👹 怪物: 0 个")
         layout.addWidget(self.monster_label)
-
-        # 物品
-        self.item_label = QLabel("💎 物品: 0 个")
         layout.addWidget(self.item_label)
-
-        # 门
-        self.door_label = QLabel("🚪 门: 0 个")
         layout.addWidget(self.door_label)
-
-        # 房间状态
-        self.room_label = QLabel("📦 房间: 未清空")
-        layout.addWidget(self.room_label)
+        layout.addWidget(self.hero_label)
 
         group.setLayout(layout)
         return group
 
     def create_control_group(self) -> QGroupBox:
         """创建快速控制组"""
-        group = QGroupBox("🎮 快速控制")
-        layout = QHBoxLayout()
+        group = QGroupBox("⚡ 快速控制")
+        layout = QVBoxLayout()
 
-        # 启动按钮
-        self.btn_start = QPushButton("▶️ 启动")
-        self.btn_start.clicked.connect(self.on_start_clicked)
-        layout.addWidget(self.btn_start)
+        # 启动/停止按钮
+        btn_layout = QHBoxLayout()
+        self.start_btn = QPushButton("▶ 启动")
+        self.stop_btn = QPushButton("⏸ 停止")
 
-        # 暂停按钮
-        self.btn_pause = QPushButton("⏸️ 暂停")
-        self.btn_pause.clicked.connect(self.on_pause_clicked)
-        self.btn_pause.setEnabled(False)
-        layout.addWidget(self.btn_pause)
-
-        # 停止按钮
-        self.btn_stop = QPushButton("⏹️ 停止")
-        self.btn_stop.clicked.connect(self.on_stop_clicked)
-        self.btn_stop.setEnabled(False)
-        layout.addWidget(self.btn_stop)
+        btn_layout.addWidget(self.start_btn)
+        btn_layout.addWidget(self.stop_btn)
+        layout.addLayout(btn_layout)
 
         group.setLayout(layout)
         return group
 
     def update_status(self, status: dict):
-        """
-        更新状态显示
+        """更新状态显示"""
+        for key, value in status.items():
+            if key in self.current_state:
+                self.current_state[key] = value
 
-        Args:
-            status: 状态字典
-        """
-        try:
-            # 更新性能指标
-            fps = status.get("fps", 0.0)
-            self.fps_bar.setValue(int(fps))
-            self.latency_label.setText(f"延迟: {status.get('latency', 0.0):.1f} ms")
-            self.frame_count_label.setText(f"帧数: {status.get('frame_count', 0)}")
+        # 更新 FPS 和延迟
+        if "fps" in status:
+            self.fps_bar.setValue(int(min(status["fps"], 60)))
+        if "latency" in status:
+            self.latency_label.setText(f"延迟: {status['latency']:.0f} ms")
+        if "frame_count" in status:
+            self.frame_count_label.setText(f"帧数: {status['frame_count']}")
+        if "run_time" in status:
+            run_seconds = int(status["run_time"])
+            minutes = run_seconds // 60
+            seconds = run_seconds % 60
+            self.run_time_label.setText(f"运行时长: {minutes:02d}:{seconds:02d}")
 
-            # 更新运行时长
-            run_time = status.get("run_time", 0.0)
-            hours = int(run_time // 3600)
-            minutes = int((run_time % 3600) // 60)
-            seconds = int(run_time % 60)
-            self.run_time_label.setText(f"运行时长: {hours:02d}:{minutes:02d}:{seconds:02d}")
+        # 更新检测信息
+        if "monsters" in status:
+            self.monster_label.setText(f"怪物: {status['monsters']}")
+        if "items" in status:
+            self.item_label.setText(f"物品: {status['items']}")
+        if "doors" in status:
+            self.door_label.setText(f"门: {status['doors']}")
 
-            # 更新决策状态
-            state = status.get("state", "STOPPED")
-            self.state_label.setText(f"当前状态: {state}")
-            self.duration_label.setText(f"持续时长: {status.get('duration', 0.0):.1f} 秒")
-            self.history_label.setText(f"状态历史: {status.get('history', '-')}")
+        # 更新英雄检测
+        hero_detected = status.get("hero_detected", False)
+        if hero_detected:
+            self.hero_label.setText("英雄: 已检测")
+            self.hero_label.setStyleSheet("color: #4CAF50;")
+        else:
+            self.hero_label.setText("英雄: --")
+            self.hero_label.setStyleSheet("color: #888888;")
 
-            # 更新检测信息
-            hero_detected = status.get("hero_detected", False)
-            self.hero_label.setText(f"👤 英雄: {'✓ 已检测' if hero_detected else '✗ 未检测'}")
-
-            self.monster_label.setText(f"👹 怪物: {status.get('monsters', 0)} 个")
-            self.item_label.setText(f"💎 物品: {status.get('items', 0)} 个")
-            self.door_label.setText(f"🚪 门: {status.get('doors', 0)} 个")
-
-            room_cleared = status.get("room_cleared", False)
-            self.room_label.setText(f"📦 房间: {'已清空' if room_cleared else '未清空'}")
-
-            # 更新按钮状态
-            is_running = state != "STOPPED"
-            self.btn_start.setEnabled(not is_running)
-            self.btn_pause.setEnabled(is_running)
-            self.btn_stop.setEnabled(is_running)
-
-        except Exception as e:
-            logger.error(f"更新状态显示失败: {e}")
-
-    # ==================== 按钮事件 ====================
-
-    def on_start_clicked(self):
-        """启动按钮点击事件"""
-        logger.info("快速控制: 启动系统")
-        # TODO: 通知主窗口启动系统
-        from PyQt5.QtCore import pyqtSignal
-        if hasattr(self.parent(), 'start_system'):
-            self.parent().start_system()
-
-    def on_pause_clicked(self):
-        """暂停按钮点击事件"""
-        logger.info("快速控制: 暂停系统")
-        # TODO: 通知主窗口暂停系统
-        if hasattr(self.parent(), 'toggle_pause'):
-            self.parent().toggle_pause()
-
-    def on_stop_clicked(self):
-        """停止按钮点击事件"""
-        logger.info("快速控制: 停止系统")
-        # TODO: 通知主窗口停止系统
-        if hasattr(self.parent(), 'stop_system'):
-            self.parent().stop_system()
+        # 更新状态历史
+        if "state" in status:
+            state_str = status["state"]
+            # 更新历史记录
+            for i, label in enumerate(self.state_history_labels):
+                if i < len(self.state_history_labels) - 1:
+                    # 移动现有记录
+                    label.setText(f"  {i+1}. {state_str}")
+                elif i == 0:
+                    # 添加新记录
+                    label.setText(f"  {i+1}. {state_str}")
