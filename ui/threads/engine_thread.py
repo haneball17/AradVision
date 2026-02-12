@@ -151,6 +151,10 @@ class EngineThread(QThread):
 
             logger.info("所有核心模块初始化完成")
 
+            # 保存到实例变量以便其他方法访问
+            self._fsm = fsm
+            self._world_model = world_model
+
             # 启动信号
             self.running = True
             self._frame_count = 0
@@ -249,7 +253,7 @@ class EngineThread(QThread):
             "fps": fps,
             "frame_count": self._frame_count,
             "run_time": time.time() - self._start_time if self._start_time else 0,
-            "state": fsm.current_state.name if hasattr(fsm, "current_state") else "UNKNOWN",
+            "state": self._fsm.current_state.name if hasattr(self._fsm, "current_state") else "UNKNOWN",
             "hero_detected": hero is not None,
             "monster_count": len(monsters),
             "item_count": len(items),
