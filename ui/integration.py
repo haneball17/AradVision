@@ -320,7 +320,7 @@ def stop_engine_thread(config: dict) -> bool:
         是否成功停止
     """
     engine_thread = get_engine_thread(config)
-    if engine_thread and engine_thread.isRunning():
+    if engine_thread and engine_thread.is_running():
         logger.info("停止引擎线程...")
         engine_thread.stop()
         return True

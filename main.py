@@ -275,17 +275,12 @@ class AradVisionApp:
             if self._ui_mode:
                 logger.info("UI 模式运行，启动 Qt 应用...")
 
-                # 检查 PyQt5 是否可用
-                if not HAS_PYQT:
-                    logger.error("PyQt5 未安装，无法启动 UI 模式")
-                    logger.info("回退到控制台模式...")
-                    self._ui_mode = False
-                    self._main_loop()
-                    return
-
-                # 创建 Qt 应用
-                app = QApplication([])
+                # UI 模式需要 PyQt5，直接导入
+                from PyQt5.QtWidgets import QApplication
                 from ui.main_window import MainWindow
+
+                # 检查 PyQt5 是否可用（导入成功则可用）
+                HAS_PYQT_AVAILABLE = True
 
                 # 创建主窗口
                 main_window = MainWindow()
@@ -302,7 +297,7 @@ class AradVisionApp:
                     )
                     # 连接 log_message 信号（日志面板）
                     self._engine_thread.signals.log_message.connect(
-                        main_window.log_panel.append_log
+                        main_window.log_panel.add_log
                     )
                     # 连接 error_occurred 信号
                     self._engine_thread.signals.error_occurred.connect(
@@ -310,7 +305,7 @@ class AradVisionApp:
                     )
 
                     # 启动引擎线程
-                    if not self._engine_thread.isRunning():
+                    if not self._engine_thread.is_running():
                         logger.info("启动引擎线程...")
                         self._engine_thread.start()
 
@@ -319,6 +314,7 @@ class AradVisionApp:
 
                     # Qt 事件循环
                     logger.info("Qt 事件循环启动...")
+                    app = QApplication([])
                     app.exec_()
 
                     logger.info("Qt 应用已退出，停止引擎线程...")
