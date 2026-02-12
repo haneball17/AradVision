@@ -30,6 +30,14 @@ try:
     HAS_VISION = True
 except ImportError:
     HAS_VISION = False
+
+# 导入 UI 模块（PyQt5）
+try:
+    from ui.threads.engine_thread import EngineThread, create_engine_thread
+    HAS_ENGINE_THREAD = True
+except ImportError:
+    HAS_ENGINE_THREAD = False
+    logger.warning("EngineThread 不可用（缺少 PyQt5），UI 模式将禁用")
     logger.warning("vision 模块不可用，检测功能将不可用")
 
 # 导入决策层模块
@@ -59,7 +67,8 @@ class AradVisionApp:
     def __init__(
         self,
         config_path: str = "configs/config.yaml",
-        use_mock: bool = True
+        use_mock: bool = True,
+        use_ui: bool = False
     ):
         """
         初始化应用
@@ -67,10 +76,15 @@ class AradVisionApp:
         Args:
             config_path: 配置文件路径
             use_mock: 是否使用 Mock 模块（用于测试）
+            use_ui: 是否启动 UI 控制面板
         """
         self.config_path = config_path
         self.use_mock = use_mock
+        self.use_ui = use_ui
         self.is_running = False
+
+        # UI 模式标志
+        self._ui_mode = False
 
         # 模块实例
         self._capture_engine: Optional[CaptureEngine] = None
@@ -81,6 +95,9 @@ class AradVisionApp:
         self._combat_logic: Optional[CombatLogic] = None
         self._path_planner: Optional[PathPlanner] = None
         self._input_driver: Optional[MockInputDriver] = None
+
+        # 引擎线程（仅 UI 模式）
+        self._engine_thread: Optional["ui.threads.engine_thread.EngineThread"] = None
 
         # 初始化日志
         setup_logger(log_level="INFO")
@@ -395,6 +412,11 @@ def main():
         "--no-mock",
         action="store_true",
         help="不使用 Mock 模块（使用真实模块，需要游戏环境）"
+    )
+    parser.add_argument(
+        "--ui",
+        action="store_true",
+        help="启动 UI 控制面板"
     )
 
     args = parser.parse_args()
