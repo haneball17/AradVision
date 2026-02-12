@@ -24,7 +24,7 @@ detector:
 # ==================== 截图配置 ====================
 capture:
   # 游戏窗口标题（用于查找窗口）
-  window_title: 地下城与勇士
+  window_title: DNF
 
   # 窗口类名（备用）
   window_class: D3D Window
