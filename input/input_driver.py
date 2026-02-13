@@ -67,18 +67,19 @@ class WindowManager:
 
     职责：
     - 检测游戏窗口是否在前台
-    - 自动激活游戏窗口（多种方法增强可靠性）
+    - 自动激活游戏窗口（使用 AttachThreadInput 机制）
 
-    Windows 限制说明：
-    - SetForegroundWindow 可能被系统阻止（用户交互时）
-    - 使用多种方法组合提高成功率
+    Windows 前台锁定机制说明：
+    - Windows 2000+ 阻止后台进程调用 SetForegroundWindow
+    - 解决方案：使用 AttachThreadInput 附加到目标线程
+    - 这样系统认为输入来自"用户线程"，允许激活窗口
     """
 
     def __init__(self, window_title: str):
         self.target_title = window_title.lower()
-        self._alt_key_state = None  # 用于 Alt 键技巧
         logger.info(f"[WindowManager] 初始化，目标窗口: '{window_title}'")
         logger.info(f"[WindowManager] 查找模式: 包含匹配（title 包含 '{window_title}'）")
+        logger.info(f"[WindowManager] 激活机制: AttachThreadInput (Microsoft 推荐方式)")
 
     def is_focused(self) -> bool:
         """
@@ -159,22 +160,26 @@ class WindowManager:
         """
         激活游戏窗口到前台
 
-        使用多种方法提高成功率：
-        1. 直接 SetForegroundWindow
-        2. Alt 键技巧（模拟用户操作）
-        3. 重试机制（最多 3 次）
+        使用 AttachThreadInput 机制（Microsoft 推荐方式）：
+        1. 获取目标窗口的线程 ID
+        2. 将当前线程附加到目标线程
+        3. 调用 SetForegroundWindow（现在会成功）
+        4. 分离线程
 
         Returns:
             是否成功激活
         """
         max_retries = 3
-        delay = 0.05  # 每次尝试间隔
+        delay = 0.1  # 每次尝试间隔（秒）
 
         logger.info(f"[WindowManager.bring_to_front] ========== 开始窗口激活流程 ==========")
 
         for attempt in range(max_retries):
             try:
                 import win32gui
+                import win32process
+                import win32con
+                import win32api
 
                 logger.info(f"[WindowManager.bring_to_front] --- 尝试 {attempt + 1}/{max_retries} ---")
 
@@ -191,80 +196,77 @@ class WindowManager:
                 current_title = win32gui.GetWindowText(current_hwnd)
                 logger.info(f"[WindowManager.bring_to_front] 当前前台窗口: hwnd={current_hwnd}, title='{current_title}'")
 
-                # 方法1: 尝试直接激活
-                try:
-                    logger.debug("[WindowManager.bring_to_front] 方法1: SetForegroundWindow")
-                    win32gui.SetForegroundWindow(hwnd)
-                    time.sleep(delay)
-                    # 验证是否成功
-                    new_hwnd = win32gui.GetForegroundWindow()
-                    if new_hwnd == hwnd:
-                        logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功 (方法1)")
-                        return True
-                    else:
-                        new_title = win32gui.GetWindowText(new_hwnd)
-                        logger.debug(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
-                except Exception as e:
-                    logger.debug(f"[WindowManager.bring_to_front] SetForegroundWindow 失败: {e}")
+                # 检查是否已经是前台
+                if current_hwnd == hwnd:
+                    logger.info(f"✓ [WindowManager.bring_to_front] 窗口已在前台，无需激活")
+                    return True
 
-                # 方法2: Alt 键技巧（模拟用户点击）
-                try:
-                    logger.debug("[WindowManager.bring_to_front] 方法2: Alt+Tab 技巧")
-                    self._simulate_alt_tab_click()
-                    time.sleep(delay)
-                    # 验证是否成功
-                    new_hwnd = win32gui.GetForegroundWindow()
-                    if new_hwnd == hwnd:
-                        logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功 (方法2: Alt+Tab)")
-                        return True
+                # ========== 关键：使用 AttachThreadInput 绕过 Windows 限制 ==========
+                # 获取目标窗口的线程 ID 和进程 ID
+                target_thread_id, target_process_id = win32process.GetWindowThreadProcessId(hwnd)
+                logger.debug(f"[WindowManager.bring_to_front] 目标窗口: thread_id={target_thread_id}, process_id={target_process_id}")
+
+                # 获取当前线程 ID
+                current_thread_id = win32api.GetCurrentThreadId()
+                logger.debug(f"[WindowManager.bring_to_front] 当前线程: thread_id={current_thread_id}")
+
+                # 如果是同一线程，直接激活即可
+                if current_thread_id == target_thread_id:
+                    logger.debug(f"[WindowManager.bring_to_front] 同一线程，直接激活")
+                    win32gui.SetForegroundWindow(hwnd)
+                else:
+                    # ========== AttachThreadInput 机制 ==========
+                    # 将当前线程的输入处理附加到目标线程
+                    # 这使系统认为我们的输入来自该线程（"用户输入"）
+                    logger.debug(f"[WindowManager.bring_to_front] 调用 AttachThreadInput 附加线程")
+                    attach_result = win32process.AttachThreadInput(
+                        current_thread_id,
+                        target_thread_id
+                    )
+                    logger.debug(f"[WindowManager.bring_to_front] AttachThreadInput 返回: {attach_result}")
+
+                    if attach_result:
+                        # 现在可以成功激活窗口
+                        win32gui.SetForegroundWindow(hwnd)
+                        time.sleep(delay)
+
+                        # 验证是否成功
+                        new_hwnd = win32gui.GetForegroundWindow()
+                        if new_hwnd == hwnd:
+                            new_title = win32gui.GetWindowText(new_hwnd)
+                            logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功! (hwnd={new_hwnd}, title='{new_title}')")
+
+                            # 确保窗口可见并恢复（如果最小化）
+                            if win32gui.IsIconic(hwnd):
+                                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                                logger.debug(f"[WindowManager.bring_to_front] 窗口已从最小化恢复")
+                        else:
+                            new_title = win32gui.GetWindowText(new_hwnd)
+                            logger.warning(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
+
+                        # 分离线程（必须！否则目标线程无法接收真实用户输入）
+                        win32process.AttachThreadInput(current_thread_id, target_thread_id, False)
+                        logger.debug(f"[WindowManager.bring_to_front] 线程已分离")
+
+                        if new_hwnd == hwnd:
+                            return True
                     else:
-                        new_title = win32gui.GetWindowText(new_hwnd)
-                        logger.debug(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
-                except Exception as e:
-                    logger.debug(f"[WindowManager.bring_to_front] Alt+Tab 技巧失败: {e}")
+                        logger.warning(f"[WindowManager.bring_to_front] AttachThreadInput 失败")
+
+                time.sleep(delay)
 
             except ImportError:
-                logger.warning("[WindowManager.bring_to_front] win32gui 不可用，跳过窗口激活")
+                logger.warning("[WindowManager.bring_to_front] win32 模块不可用，非 Windows 平台")
                 return True
             except Exception as e:
-                logger.error(f"[WindowManager.bring_to_front] 窗口激活异常: {e}")
-                return False
+                logger.error(f"[WindowManager.bring_to_front] 窗口激活异常: {type(e).__name__}: {e}")
+                import traceback
+                logger.debug(f"[WindowManager.bring_to_front] 异常详情: {traceback.format_exc()}")
+                time.sleep(delay)
 
         logger.warning(f"[WindowManager.bring_to_front] 经过 {max_retries} 次尝试，窗口激活失败")
         logger.info(f"[WindowManager.bring_to_front] ========== 窗口激活流程结束 ==========")
         return False
-
-    def _simulate_alt_tab_click(self) -> None:
-        """
-        模拟 Alt+Tab 组合键来切换窗口焦点
-
-        原理：按住 Alt，短暂按 Tab，释放 Alt
-        这会触发 Windows 的窗口切换功能
-        """
-        try:
-            import win32gui
-            import win32con
-
-            # 按下 Alt
-            win32con.key_event(win32con.WM_KEYDOWN, 0x12)  # 0x12 是 VK_MENU
-            time.sleep(0.05)
-
-            # 按 Tab
-            win32con.key_event(win32con.WM_KEYDOWN, 0x09)  # 0x09 是 VK_TAB
-            time.sleep(0.05)
-
-            # 释放 Tab
-            win32con.key_event(win32con.WM_KEYUP, 0x09)
-            time.sleep(0.05)
-
-            # 释放 Alt
-            win32con.key_event(win32con.WM_KEYUP, 0x12)
-
-            logger.debug("Alt+Tab 组合键已发送")
-        except ImportError:
-            logger.warning("win32con 不可用，跳过 Alt+Tab 模拟")
-        except Exception as e:
-            logger.warning(f"Alt+Tab 模拟失败: {e}")
 
 
 class InputDriver(BaseInputDriver):
