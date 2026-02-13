@@ -232,9 +232,12 @@ class WindowManager:
                 logger.debug(f"[WindowManager.bring_to_front] 当前线程: thread_id={current_thread_id}")
 
                 # 如果是同一线程，直接激活即可
+                # pywin32 的 AttachThreadInput 成功时返回 None，不可用返回值判断成功/失败
+                attach_succeeded = False
+
                 if current_thread_id == target_thread_id:
-                    logger.debug(f"[WindowManager.bring_to_front] 同一线程，直接激活")
-                    win32gui.SetForegroundWindow(hwnd)
+                    logger.debug(f"[WindowManager.bring_to_front] 同一线程，无需 AttachThreadInput")
+                    attach_succeeded = True
                 else:
                     # ========== 方法 1: AttachThreadInput 机制 ==========
                     logger.debug(f"[WindowManager.bring_to_front] 尝试 AttachThreadInput 附加线程")
@@ -242,28 +245,95 @@ class WindowManager:
                     logger.debug(f"[WindowManager.bring_to_front]   - 目标线程 ID: {target_thread_id}")
                     logger.debug(f"[WindowManager.bring_to_front]   - 目标进程 ID: {target_process_id}")
 
-                    # AttachThreadInput(idAttach, idAttachTo, fAttach)
-                    # fAttach=TRUE 表示附加，FALSE 表示分离
                     try:
-                        attach_result = win32process.AttachThreadInput(
+                        win32process.AttachThreadInput(
                             current_thread_id,
                             target_thread_id,
-                            True  # fAttach=TRUE 表示附加线程
+                            True,  # fAttach=TRUE 表示附加线程
                         )
-                        logger.debug(f"[WindowManager.bring_to_front] AttachThreadInput 返回: {attach_result} (类型: {type(attach_result).__name__})")
+                        attach_succeeded = True
+                        logger.debug(
+                            "[WindowManager.bring_to_front] AttachThreadInput 调用成功 "
+                            "（pywin32 成功时返回 None）"
+                        )
                     except Exception as attach_error:
-                        logger.error(f"[WindowManager.bring_to_front] AttachThreadInput 调用异常: {type(attach_error).__name__}: {attach_error}")
-                        logger.debug(f"[WindowManager.bring_to_front]   - 异常详情: 调用失败时的 GetLastError() 值可能提供更多信息")
+                        logger.error(
+                            f"[WindowManager.bring_to_front] AttachThreadInput 调用异常: "
+                            f"{type(attach_error).__name__}: {attach_error}"
+                        )
+                        error_code = getattr(attach_error, "winerror", None)
+                        func_name = getattr(attach_error, "funcname", None)
+                        error_msg = getattr(attach_error, "strerror", None)
+                        logger.error(
+                            "[WindowManager.bring_to_front] AttachThreadInput 失败详情: "
+                            f"winerror={error_code}, func={func_name}, message={error_msg}"
+                        )
                         try:
-                            import win32api
                             last_error = win32api.GetLastError()
-                            logger.debug(f"[WindowManager.bring_to_front]   - GetLastError() 返回: {last_error}")
-                        except ImportError:
-                            logger.warning("[WindowManager.bring_to_front]   - 无法获取 GetLastError（非 Windows 平台）")
-                        attach_result = None
+                            logger.debug(f"[WindowManager.bring_to_front] GetLastError() 返回: {last_error}")
+                        except Exception as get_last_error_exc:
+                            logger.warning(
+                                "[WindowManager.bring_to_front] 无法获取 GetLastError(): "
+                                f"{get_last_error_exc}"
+                            )
 
-                    if attach_result:
-                        # 现在可以成功激活窗口
+                if attach_succeeded:
+                    try:
+                        # 激活前确保窗口可见并恢复
+                        if win32gui.IsIconic(hwnd):
+                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                            logger.debug(f"[WindowManager.bring_to_front] 窗口已从最小化恢复")
+                        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+                        # 现在尝试激活窗口
+                        win32gui.SetForegroundWindow(hwnd)
+                        time.sleep(delay)
+
+                        # 验证是否成功
+                        new_hwnd = win32gui.GetForegroundWindow()
+                        if new_hwnd == hwnd:
+                            new_title = win32gui.GetWindowText(new_hwnd)
+                            logger.info(
+                                f"✓ [WindowManager.bring_to_front] 窗口激活成功! "
+                                f"(hwnd={new_hwnd}, title='{new_title}')"
+                            )
+                            return True
+
+                        new_title = win32gui.GetWindowText(new_hwnd)
+                        logger.warning(
+                            f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'"
+                        )
+                    finally:
+                        # 分离线程（必须），避免输入队列长期绑定导致副作用
+                        if current_thread_id != target_thread_id:
+                            try:
+                                win32process.AttachThreadInput(current_thread_id, target_thread_id, False)
+                                logger.debug(f"[WindowManager.bring_to_front] 线程已分离")
+                            except Exception as detach_error:
+                                logger.warning(
+                                    "[WindowManager.bring_to_front] 线程分离失败: "
+                                    f"{type(detach_error).__name__}: {detach_error}"
+                                )
+                else:
+                    logger.warning("[WindowManager.bring_to_front] AttachThreadInput 失败，尝试备用方法")
+
+                    # ========== 方法 2: Alt 键模拟技巧 ==========
+                    # 这是一个已知的绕过 Windows 前台锁定的方法
+                    # 模拟按下 Alt 键，使系统认为有用户输入
+                    logger.debug(f"[WindowManager.bring_to_front] 使用 Alt 键模拟技巧")
+                    try:
+                        # 模拟 Alt 键按下/弹起
+                        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)  # Alt down
+                        time.sleep(0.05)
+                        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)  # Alt up
+
+                        # 现在尝试激活窗口
+                        # 先显示窗口
+                        if win32gui.IsIconic(hwnd):
+                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+                        # 设置为前台窗口
                         win32gui.SetForegroundWindow(hwnd)
                         time.sleep(delay)
 
@@ -272,55 +342,12 @@ class WindowManager:
                         if new_hwnd == hwnd:
                             new_title = win32gui.GetWindowText(new_hwnd)
                             logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功! (hwnd={new_hwnd}, title='{new_title}')")
-
-                            # 确保窗口可见并恢复（如果最小化）
-                            if win32gui.IsIconic(hwnd):
-                                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                                logger.debug(f"[WindowManager.bring_to_front] 窗口已从最小化恢复")
+                            return True
                         else:
                             new_title = win32gui.GetWindowText(new_hwnd)
-                            logger.warning(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
-
-                        # 分离线程（必须！否则目标线程无法接收真实用户输入）
-                        win32process.AttachThreadInput(current_thread_id, target_thread_id, False)
-                        logger.debug(f"[WindowManager.bring_to_front] 线程已分离")
-
-                        if new_hwnd == hwnd:
-                            return True
-                    else:
-                        logger.warning(f"[WindowManager.bring_to_front] AttachThreadInput 失败（返回 {attach_result}），尝试备用方法")
-
-                        # ========== 方法 2: Alt 键模拟技巧 ==========
-                        # 这是一个已知的绕过 Windows 前台锁定的方法
-                        # 模拟按下 Alt 键，使系统认为有用户输入
-                        logger.debug(f"[WindowManager.bring_to_front] 使用 Alt 键模拟技巧")
-                        try:
-                            # 模拟 Alt 键按下/弹起
-                            win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)  # Alt down
-                            time.sleep(0.05)
-                            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)  # Alt up
-
-                            # 现在尝试激活窗口
-                            # 先显示窗口
-                            if win32gui.IsIconic(hwnd):
-                                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
-
-                            # 设置为前台窗口
-                            win32gui.SetForegroundWindow(hwnd)
-                            time.sleep(delay)
-
-                            # 验证是否成功
-                            new_hwnd = win32gui.GetForegroundWindow()
-                            if new_hwnd == hwnd:
-                                new_title = win32gui.GetWindowText(new_hwnd)
-                                logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功! (hwnd={new_hwnd}, title='{new_title}')")
-                                return True
-                            else:
-                                new_title = win32gui.GetWindowText(new_hwnd)
-                                logger.warning(f"[WindowManager.bring_to_front] 备用方法也失败，当前前台: hwnd={new_hwnd}, title='{new_title}'")
-                        except Exception as alt_error:
-                            logger.error(f"[WindowManager.bring_to_front] Alt 键模拟异常: {alt_error}")
+                            logger.warning(f"[WindowManager.bring_to_front] 备用方法也失败，当前前台: hwnd={new_hwnd}, title='{new_title}'")
+                    except Exception as alt_error:
+                        logger.error(f"[WindowManager.bring_to_front] Alt 键模拟异常: {alt_error}")
 
                 time.sleep(delay)
 
