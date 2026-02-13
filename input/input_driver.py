@@ -77,7 +77,8 @@ class WindowManager:
     def __init__(self, window_title: str):
         self.target_title = window_title.lower()
         self._alt_key_state = None  # 用于 Alt 键技巧
-        logger.debug(f"WindowManager 初始化，目标窗口: {window_title}")
+        logger.info(f"[WindowManager] 初始化，目标窗口: '{window_title}'")
+        logger.info(f"[WindowManager] 查找模式: 包含匹配（title 包含 '{window_title}'）")
 
     def is_focused(self) -> bool:
         """
@@ -91,24 +92,67 @@ class WindowManager:
             hwnd = win32gui.GetForegroundWindow()
             title = win32gui.GetWindowText(hwnd)
             is_focused = self.target_title in title.lower()
-            logger.debug(f"前台窗口: {title}, 游戏焦点: {is_focused}")
+
+            logger.debug(f"[WindowManager.is_focused] 当前前台: '{title}', 焦点匹配: {is_focused}")
+            logger.debug(f"[WindowManager.is_focused] 目标标题: '{self.target_title}', 实际标题: '{title.lower()}'")
+
             return is_focused
         except ImportError:
-            # 非 Windows 平台默认返回 True
+            logger.warning("[WindowManager.is_focused] win32gui 不可用，非 Windows 平台")
             return True
         except Exception as e:
-            logger.warning(f"窗口焦点检测失败: {e}")
+            logger.warning(f"[WindowManager.is_focused] 窗口焦点检测失败: {e}")
             return True
 
     def get_hwnd(self) -> Optional[int]:
-        """获取游戏窗口句柄"""
+        """
+        获取游戏窗口句柄
+
+        Returns:
+            窗口句柄，未找到返回 None
+        """
         try:
             import win32gui
-            return win32gui.FindWindow(None, self.target_title)
+
+            # 枚举所有窗口查找匹配
+            matching_windows = []
+
+            def enum_callback(hwnd, windows):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if title and self.target_title in title.lower():
+                        windows.append((hwnd, title))
+                return True
+
+            win32gui.EnumWindows(enum_callback, matching_windows)
+
+            if matching_windows:
+                logger.info(f"[WindowManager.get_hwnd] 找到 {len(matching_windows)} 个匹配窗口:")
+                for hwnd, title in matching_windows:
+                    logger.info(f"  - hwnd={hwnd}, title='{title}'")
+                return matching_windows[0][0]  # 返回第一个匹配
+            else:
+                logger.warning(f"[WindowManager.get_hwnd] 未找到包含 '{self.target_title}' 的窗口")
+                logger.info("[WindowManager.get_hwnd] 尝试列出所有可见窗口标题:")
+                all_titles = []
+                def enum_all(hwnd, titles):
+                    if win32gui.IsWindowVisible(hwnd):
+                        title = win32gui.GetWindowText(hwnd)
+                        if title:
+                            titles.append(title)
+                    return True
+                win32gui.EnumWindows(enum_all, all_titles)
+                for title in all_titles[:20]:  # 只显示前 20 个
+                    logger.info(f"  - '{title}'")
+                if len(all_titles) > 20:
+                    logger.info(f"  ... 还有 {len(all_titles) - 20} 个窗口")
+                return None
+
         except ImportError:
+            logger.warning("[WindowManager.get_hwnd] win32gui 不可用")
             return None
         except Exception as e:
-            logger.warning(f"获取窗口句柄失败: {e}")
+            logger.warning(f"[WindowManager.get_hwnd] 获取窗口句柄失败: {e}")
             return None
 
     def bring_to_front(self) -> bool:
@@ -126,47 +170,68 @@ class WindowManager:
         max_retries = 3
         delay = 0.05  # 每次尝试间隔
 
+        logger.info(f"[WindowManager.bring_to_front] ========== 开始窗口激活流程 ==========")
+
         for attempt in range(max_retries):
             try:
                 import win32gui
 
+                logger.info(f"[WindowManager.bring_to_front] --- 尝试 {attempt + 1}/{max_retries} ---")
+
+                # 获取窗口句柄
                 hwnd = self.get_hwnd()
                 if not hwnd:
-                    logger.warning(f"未找到游戏窗口: {self.target_title}")
+                    logger.warning(f"[WindowManager.bring_to_front] 无法获取窗口句柄，激活失败")
                     return False
+
+                logger.info(f"[WindowManager.bring_to_front] 目标窗口句柄: {hwnd}")
+
+                # 记录当前前台窗口
+                current_hwnd = win32gui.GetForegroundWindow()
+                current_title = win32gui.GetWindowText(current_hwnd)
+                logger.info(f"[WindowManager.bring_to_front] 当前前台窗口: hwnd={current_hwnd}, title='{current_title}'")
 
                 # 方法1: 尝试直接激活
                 try:
+                    logger.debug("[WindowManager.bring_to_front] 方法1: SetForegroundWindow")
                     win32gui.SetForegroundWindow(hwnd)
-                    logger.info(f"[尝试 {attempt+1}/{max_retries}] 直接激活窗口")
                     time.sleep(delay)
                     # 验证是否成功
-                    if win32gui.GetForegroundWindow() == hwnd:
-                        logger.info("✓ 窗口激活成功")
+                    new_hwnd = win32gui.GetForegroundWindow()
+                    if new_hwnd == hwnd:
+                        logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功 (方法1)")
                         return True
+                    else:
+                        new_title = win32gui.GetWindowText(new_hwnd)
+                        logger.debug(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
                 except Exception as e:
-                    logger.debug(f"SetForegroundWindow 失败: {e}")
+                    logger.debug(f"[WindowManager.bring_to_front] SetForegroundWindow 失败: {e}")
 
                 # 方法2: Alt 键技巧（模拟用户点击）
                 try:
+                    logger.debug("[WindowManager.bring_to_front] 方法2: Alt+Tab 技巧")
                     self._simulate_alt_tab_click()
-                    logger.info(f"[尝试 {attempt+1}/{max_retries}] Alt+Tab 技巧")
                     time.sleep(delay)
                     # 验证是否成功
-                    if win32gui.GetForegroundWindow() == hwnd:
-                        logger.info("✓ 窗口激活成功 (Alt+Tab)")
+                    new_hwnd = win32gui.GetForegroundWindow()
+                    if new_hwnd == hwnd:
+                        logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功 (方法2: Alt+Tab)")
                         return True
+                    else:
+                        new_title = win32gui.GetWindowText(new_hwnd)
+                        logger.debug(f"[WindowManager.bring_to_front] 激活后前台: hwnd={new_hwnd}, title='{new_title}'")
                 except Exception as e:
-                    logger.debug(f"Alt+Tab 技巧失败: {e}")
+                    logger.debug(f"[WindowManager.bring_to_front] Alt+Tab 技巧失败: {e}")
 
             except ImportError:
-                logger.warning("win32gui 不可用，跳过窗口激活")
+                logger.warning("[WindowManager.bring_to_front] win32gui 不可用，跳过窗口激活")
                 return True
             except Exception as e:
-                logger.error(f"窗口激活异常: {e}")
+                logger.error(f"[WindowManager.bring_to_front] 窗口激活异常: {e}")
                 return False
 
-        logger.warning(f"经过 {max_retries} 次尝试，窗口激活失败")
+        logger.warning(f"[WindowManager.bring_to_front] 经过 {max_retries} 次尝试，窗口激活失败")
+        logger.info(f"[WindowManager.bring_to_front] ========== 窗口激活流程结束 ==========")
         return False
 
     def _simulate_alt_tab_click(self) -> None:
@@ -252,19 +317,36 @@ class InputDriver(BaseInputDriver):
         self._pressed_keys: Set[str] = set()
         self.is_running = True
 
+        # ========== 窗口管理器配置（详细日志）==========
+        logger.info(f"[InputDriver.__init__] ========== 输入驱动初始化 ==========")
+        logger.info(f"[InputDriver.__init__] window_title: {window_title}")
+        logger.info(f"[InputDriver.__init__] check_focus: {check_focus}")
+        logger.info(f"[InputDriver.__init__] auto_activate: {auto_activate}")
+
         # 窗口管理器
         self._window_manager: Optional[WindowManager] = None
         if window_title and check_focus:
+            logger.info(f"[InputDriver.__init__] 创建 WindowManager (window_title='{window_title}', check_focus=True)")
             self._window_manager = WindowManager(window_title)
             self._check_focus = check_focus
             self._auto_activate = auto_activate
+            logger.info(f"[InputDriver.__init__] ✓ 窗口管理器已创建")
+            logger.info(f"[InputDriver.__init__] ✓ 将检查窗口焦点: {self._check_focus}")
+            logger.info(f"[InputDriver.__init__] ✓ 自动激活窗口: {self._auto_activate}")
         else:
+            reason = []
+            if not window_title:
+                reason.append("window_title=None")
+            if not check_focus:
+                reason.append("check_focus=False")
+            logger.warning(f"[InputDriver.__init__] 窗口管理器未创建，原因: {', '.join(reason)}")
             self._check_focus = False
             self._auto_activate = False
 
         # 按键映射：动作名 -> 按键名
         self._action_to_key: Dict[CommandType, str] = {}
         self._build_key_mapping(key_bindings)
+        logger.info(f"[InputDriver.__init__] ========================================")
 
     def _build_key_mapping(self, key_bindings: Optional[Dict[str, str]]) -> None:
         """
@@ -322,18 +404,33 @@ class InputDriver(BaseInputDriver):
                 logger.warning("输入驱动已停止，忽略 execute 调用")
                 return False
 
-            # 检查窗口焦点
+            # ========== 窗口焦点检查（详细日志）==========
+            logger.debug(f"[InputDriver.execute] ==================== 输入前检查 ====================")
+            logger.debug(f"[InputDriver.execute] 动作类型: {command.action_type.value}")
+            logger.debug(f"[InputDriver.execute] _check_focus: {self._check_focus}")
+            logger.debug(f"[InputDriver.execute] _window_manager 存在: {self._window_manager is not None}")
+
             if self._check_focus and self._window_manager:
-                if not self._window_manager.is_focused():
-                    logger.warning("游戏窗口不在前台，尝试激活窗口")
+                is_focused = self._window_manager.is_focused()
+                logger.debug(f"[InputDriver.execute] 窗口焦点状态: {is_focused}")
+
+                if not is_focused:
+                    logger.warning("[InputDriver.execute] ⚠ 游戏窗口不在前台！")
                     # 只有在 auto_activate=True 时才激活窗口
                     if self._auto_activate:
+                        logger.info("[InputDriver.execute] auto_activate=True，开始激活窗口...")
                         success = self._window_manager.bring_to_front()
                         if not success:
                             # 激活失败，记录警告但继续执行
-                            logger.warning("窗口激活失败，输入可能无效")
+                            logger.warning("[InputDriver.execute] ✓ 窗口激活失败，输入可能无效")
+                        else:
+                            logger.info("[InputDriver.execute] ✓ 窗口激活成功")
                     else:
-                        logger.warning("auto_activate=False，跳过窗口激活，输入可能无效")
+                        logger.warning("[InputDriver.execute] auto_activate=False，跳过窗口激活，输入可能无效")
+                else:
+                    logger.info("[InputDriver.execute] ✓ 游戏窗口在前台")
+
+            logger.debug(f"[InputDriver.execute] ==================================================")
 
             action = command.action_type
 

@@ -20,7 +20,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.logger import logger
+from core.logger import logger, setup_logger
 from core.config import ConfigLoader
 from input.input_driver import InputDriver
 
@@ -29,9 +29,20 @@ class GameInputTester:
     """游戏输入测试器"""
 
     def __init__(self):
+        # 设置日志级别为 DEBUG，以便查看详细的窗口焦点日志
+        setup_logger("DEBUG")
+        logger.info("=" * 60)
+        logger.info("游戏输入测试器初始化")
+        logger.info("=" * 60)
+
         # 加载配置文件
         config_loader = ConfigLoader()
         config = config_loader.load("configs/config.yaml")
+
+        logger.info(f"配置文件加载成功:")
+        logger.info(f"  capture.window_title = '{config.capture.window_title}'")
+        logger.info(f"  input.check_focus = {config.input.check_focus}")
+        logger.info(f"  input.auto_activate = {config.input.auto_activate}")
 
         # 提取输入配置
         input_config = config.input
