@@ -77,43 +77,62 @@ class GameInputTester:
             auto_activate=input_config.auto_activate,
         )
 
+        # 保存按键映射引用，供测试方法使用
+        self.keys = input_config.key_bindings
+
         logger.info(f"InputDriver 初始化完成")
         logger.info(f"  窗口标题: {window_title}")
         logger.info(f"  检查焦点: {input_config.check_focus}")
         logger.info(f"  自动激活: {input_config.auto_activate}")
+        logger.info(f"  按键映射:")
+        logger.info(f"    攻击: {self.keys.attack}")
+        logger.info(f"    技能: {self.keys.skill}")
+        logger.info(f"    跳跃: {self.keys.jump}")
+        logger.info(f"    上: {self.keys.move_up}")
+        logger.info(f"    下: {self.keys.move_down}")
+        logger.info(f"    左: {self.keys.move_left}")
+        logger.info(f"    右: {self.keys.move_right}")
 
     def test_basic_keys(self):
-        """测试基础按键"""
+        """测试基础按键（使用配置文件中的按键映射）"""
         print("\n=== 基础按键测试 ===")
         print("将依次测试以下按键，请在游戏中观察：")
-        print("  1. 空格键 (普通攻击)")
-        print("  2. X 键 (技能)")
-        print("  3. 数字键 1-5 (技能栏)")
-        print("  4. Esc 键 (取消/逃跑)")
+        print(f"  1. 攻击键 ({self.keys.attack})")
+        print(f"  2. 技能键 ({self.keys.skill})")
+        print(f"  3. 跳跃键 ({self.keys.jump})")
+        print(f"  4. 技能栏 1-5 ({self.keys.skill_1} - {self.keys.skill_5})")
+        print("  5. Esc 键 (取消/逃跑)")
 
         input("\n按回车开始测试...")
 
-        # 测试空格
-        print("\n[测试] 空格键 (普通攻击)")
+        # 测试攻击键
+        print(f"\n[测试] 攻击键 ({self.keys.attack})")
         for i in range(3):
-            self.driver.tap("space")
+            self.driver.tap(self.keys.attack)
             time.sleep(0.5)
 
         time.sleep(1)
 
-        # 测试 X 键
-        print("[测试] X 键 (技能)")
+        # 测试技能键
+        print(f"[测试] 技能键 ({self.keys.skill})")
         for i in range(3):
-            self.driver.tap("x")
+            self.driver.tap(self.keys.skill)
             time.sleep(0.5)
 
         time.sleep(1)
 
-        # 测试数字键
-        print("[测试] 数字键 1-5")
-        for key in ["1", "2", "3", "4", "5"]:
+        # 测试跳跃键
+        print(f"[测试] 跳跃键 ({self.keys.jump})")
+        self.driver.tap(self.keys.jump)
+
+        time.sleep(1)
+
+        # 测试技能栏数字键
+        print(f"[测试] 技能栏数字键")
+        for key_num in range(1, 6):
+            key = getattr(self.keys, f'skill_{key_num}')
             self.driver.tap(key)
-            print(f"  按下 {key}")
+            print(f"  按下技能栏 {key_num} (按键: {key})")
             time.sleep(0.3)
 
         time.sleep(1)
@@ -125,17 +144,18 @@ class GameInputTester:
         print("\n✓ 基础按键测试完成")
 
     def test_direction_keys(self):
-        """测试方向键"""
+        """测试方向键（使用配置文件中的按键映射）"""
         print("\n=== 方向键测试 ===")
         print("将测试角色移动，请确保角色在开阔位置")
+        print(f"当前方向键配置: 上={self.keys.move_up}, 下={self.keys.move_down}, 左={self.keys.move_left}, 右={self.keys.move_right}")
 
         input("\n按回车开始测试...")
 
         directions = [
-            ("up", "向上"),
-            ("down", "向下"),
-            ("left", "向左"),
-            ("right", "向右"),
+            (self.keys.move_up, "向上"),
+            (self.keys.move_down, "向下"),
+            (self.keys.move_left, "向左"),
+            (self.keys.move_right, "向右"),
         ]
 
         for key, desc in directions:
@@ -147,18 +167,19 @@ class GameInputTester:
         print("\n✓ 方向键测试完成")
 
     def test_movement_sequence(self):
-        """测试移动序列"""
+        """测试移动序列（使用配置文件中的按键映射）"""
         print("\n=== 移动序列测试 ===")
-        print("角色将执行：上 -> 右 -> 下 -> 左 -> 原地旋转")
+        print("角色将执行：上 -> 右 -> 下 -> 左")
+        print(f"当前方向键配置: 上={self.keys.move_up}, 右={self.keys.move_right}, 下={self.keys.move_down}, 左={self.keys.move_left}")
 
         input("\n按回车开始测试...")
 
-        # 定义一个移动路径
+        # 定义一个移动路径（使用配置的按键）
         sequence = [
-            ("up", 0.4, "向上"),
-            ("right", 0.4, "向右"),
-            ("down", 0.4, "向下"),
-            ("left", 0.4, "向左"),
+            (self.keys.move_up, 0.4, "向上"),
+            (self.keys.move_right, 0.4, "向右"),
+            (self.keys.move_down, 0.4, "向下"),
+            (self.keys.move_left, 0.4, "向左"),
         ]
 
         for key, duration, desc in sequence:
@@ -169,34 +190,40 @@ class GameInputTester:
         print("\n✓ 移动序列测试完成")
 
     def test_skill_combo(self):
-        """测试技能连招"""
+        """测试技能连招（使用配置文件中的按键映射）"""
         print("\n=== 技能连招测试 ===")
-        print("将测试：X -> 1 -> 2 -> 3 的技能序列")
+        print(f"将测试：技能({self.keys.skill}) -> 技能栏1-3 的技能序列")
 
         input("\n按回车开始测试...")
 
-        skills = ["x", "1", "2", "3"]
-        for skill in skills:
-            print(f"[技能] 释放 {skill}")
-            self.driver.tap(skill)
+        skills = [
+            (self.keys.skill, "通用技能"),
+            (self.keys.skill_1, "技能栏1"),
+            (self.keys.skill_2, "技能栏2"),
+            (self.keys.skill_3, "技能栏3"),
+        ]
+
+        for skill_key, skill_desc in skills:
+            print(f"[技能] 释放 {skill_desc} (按键: {skill_key})")
+            self.driver.tap(skill_key)
             time.sleep(0.8)  # 技能间模拟
 
         print("\n✓ 技能连招测试完成")
 
     def test_stop_all(self):
-        """测试紧急停止"""
+        """测试紧急停止（使用配置文件中的按键映射）"""
         print("\n=== 紧急停止测试 ===")
-        print("将持续按住空格键，然后触发 stop_all")
+        print(f"将持续按住攻击键({self.keys.attack})，然后触发 stop_all")
 
         input("\n按回车开始测试...")
 
-        print("[测试] 持续按住空格...")
+        print(f"[测试] 持续按住攻击键({self.keys.attack})...")
         print("[提示] 观察游戏中角色是否持续攻击")
         print("[提示] 3秒后将自动停止")
 
         # 模拟持续攻击
         for i in range(10):
-            self.driver.tap("space")
+            self.driver.tap(self.keys.attack)
             time.sleep(0.2)
 
         # 紧急停止
@@ -206,7 +233,7 @@ class GameInputTester:
         print("\n✓ 紧急停止测试完成")
 
     def test_random_input(self):
-        """测试随机输入"""
+        """测试随机输入（使用配置文件中的按键映射）"""
         print("\n=== 随机输入测试 ===")
         print("将随机执行按键和移动，持续 5 秒")
 
@@ -214,7 +241,21 @@ class GameInputTester:
 
         import random
 
-        keys = ["space", "x", "1", "2", "3", "up", "down", "left", "right"]
+        # 使用配置的按键构建随机测试列表
+        keys = [
+            self.keys.attack,
+            self.keys.skill,
+            self.keys.jump,
+            self.keys.move_up,
+            self.keys.move_down,
+            self.keys.move_left,
+            self.keys.move_right,
+            self.keys.skill_1,
+            self.keys.skill_2,
+            self.keys.skill_3,
+        ]
+
+        print(f"[提示] 随机按键池: {keys}")
 
         start_time = time.time()
         while time.time() - start_time < 5:
