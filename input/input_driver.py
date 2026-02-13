@@ -236,10 +236,8 @@ class WindowManager:
                     logger.debug(f"[WindowManager.bring_to_front] 同一线程，直接激活")
                     win32gui.SetForegroundWindow(hwnd)
                 else:
-                    # ========== AttachThreadInput 机制 ==========
-                    # 将当前线程的输入处理附加到目标线程
-                    # 这使系统认为我们的输入来自该线程（"用户输入"）
-                    logger.debug(f"[WindowManager.bring_to_front] 调用 AttachThreadInput 附加线程")
+                    # ========== 方法 1: AttachThreadInput 机制 ==========
+                    logger.debug(f"[WindowManager.bring_to_front] 尝试 AttachThreadInput 附加线程")
                     # AttachThreadInput(idAttach, idAttachTo, fAttach)
                     # fAttach=TRUE 表示附加，FALSE 表示分离
                     attach_result = win32process.AttachThreadInput(
@@ -275,7 +273,39 @@ class WindowManager:
                         if new_hwnd == hwnd:
                             return True
                     else:
-                        logger.warning(f"[WindowManager.bring_to_front] AttachThreadInput 失败")
+                        logger.warning(f"[WindowManager.bring_to_front] AttachThreadInput 失败（返回 {attach_result}），尝试备用方法")
+
+                        # ========== 方法 2: Alt 键模拟技巧 ==========
+                        # 这是一个已知的绕过 Windows 前台锁定的方法
+                        # 模拟按下 Alt 键，使系统认为有用户输入
+                        logger.debug(f"[WindowManager.bring_to_front] 使用 Alt 键模拟技巧")
+                        try:
+                            # 模拟 Alt 键按下/弹起
+                            win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)  # Alt down
+                            time.sleep(0.05)
+                            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)  # Alt up
+
+                            # 现在尝试激活窗口
+                            # 先显示窗口
+                            if win32gui.IsIconic(hwnd):
+                                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                            win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+
+                            # 设置为前台窗口
+                            win32gui.SetForegroundWindow(hwnd)
+                            time.sleep(delay)
+
+                            # 验证是否成功
+                            new_hwnd = win32gui.GetForegroundWindow()
+                            if new_hwnd == hwnd:
+                                new_title = win32gui.GetWindowText(new_hwnd)
+                                logger.info(f"✓ [WindowManager.bring_to_front] 窗口激活成功! (hwnd={new_hwnd}, title='{new_title}')")
+                                return True
+                            else:
+                                new_title = win32gui.GetWindowText(new_hwnd)
+                                logger.warning(f"[WindowManager.bring_to_front] 备用方法也失败，当前前台: hwnd={new_hwnd}, title='{new_title}'")
+                        except Exception as alt_error:
+                            logger.error(f"[WindowManager.bring_to_front] Alt 键模拟异常: {alt_error}")
 
                 time.sleep(delay)
 
