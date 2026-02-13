@@ -326,11 +326,14 @@ class InputDriver(BaseInputDriver):
             if self._check_focus and self._window_manager:
                 if not self._window_manager.is_focused():
                     logger.warning("游戏窗口不在前台，尝试激活窗口")
-                    # 尝试自动激活窗口（重试机制内置）
-                    success = self._window_manager.bring_to_front()
-                    if not success:
-                        # 激活失败，记录警告但继续执行
-                        logger.warning("窗口激活失败，输入可能无效")
+                    # 只有在 auto_activate=True 时才激活窗口
+                    if self._auto_activate:
+                        success = self._window_manager.bring_to_front()
+                        if not success:
+                            # 激活失败，记录警告但继续执行
+                            logger.warning("窗口激活失败，输入可能无效")
+                    else:
+                        logger.warning("auto_activate=False，跳过窗口激活，输入可能无效")
 
             action = command.action_type
 

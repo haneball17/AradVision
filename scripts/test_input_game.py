@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.logger import logger
+from core.config import ConfigLoader
 from input.input_driver import InputDriver
 
 
@@ -28,12 +29,47 @@ class GameInputTester:
     """游戏输入测试器"""
 
     def __init__(self):
-        # 创建输入驱动（使用配置文件中的设置）
+        # 加载配置文件
+        config_loader = ConfigLoader()
+        config = config_loader.load("configs/config.yaml")
+
+        # 提取输入配置
+        input_config = config.input
+        window_title = config.capture.window_title  # 使用 capture 配置中的窗口标题
+
+        # 将 key_bindings 转换为字典格式
+        key_bindings_dict = {
+            'attack': input_config.key_bindings.attack,
+            'skill': input_config.key_bindings.skill,
+            'jump': input_config.key_bindings.jump,
+            'pick_up': input_config.key_bindings.pick_up,
+            'move_up': input_config.key_bindings.move_up,
+            'move_down': input_config.key_bindings.move_down,
+            'move_left': input_config.key_bindings.move_left,
+            'move_right': input_config.key_bindings.move_right,
+            'skill_1': input_config.key_bindings.skill_1,
+            'skill_2': input_config.key_bindings.skill_2,
+            'skill_3': input_config.key_bindings.skill_3,
+            'skill_4': input_config.key_bindings.skill_4,
+            'skill_5': input_config.key_bindings.skill_5,
+            'skill_6': input_config.key_bindings.skill_6,
+            'skill_7': input_config.key_bindings.skill_7,
+            'skill_8': input_config.key_bindings.skill_8,
+        }
+
+        # 创建输入驱动（从配置文件加载）
         self.driver = InputDriver(
             enable_jitter=True,
-            # key_bindings 和 window_title 会从配置文件加载
+            key_bindings=key_bindings_dict,
+            window_title=window_title,
+            check_focus=input_config.check_focus,
+            auto_activate=input_config.auto_activate,
         )
-        logger.info("InputDriver 初始化完成")
+
+        logger.info(f"InputDriver 初始化完成")
+        logger.info(f"  窗口标题: {window_title}")
+        logger.info(f"  检查焦点: {input_config.check_focus}")
+        logger.info(f"  自动激活: {input_config.auto_activate}")
 
     def test_basic_keys(self):
         """测试基础按键"""

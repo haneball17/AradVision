@@ -246,7 +246,12 @@ class ConfigLoader:
                 type=input_data.get('type', 'mock'),
                 delay_min=input_data.get('delay_min', 0.05),
                 delay_max=input_data.get('delay_max', 0.15),
-                randomization=input_data.get('randomization', True)
+                randomization=input_data.get('randomization', True),
+                # 解析按键绑定
+                key_bindings=self._parse_key_bindings(input_data.get('key_bindings', {})),
+                # 解析窗口配置
+                check_focus=input_data.get('window', {}).get('check_focus', True),
+                auto_activate=input_data.get('window', {}).get('auto_activate', False)
             )
 
         # 解析 combat 配置
@@ -268,6 +273,45 @@ class ConfigLoader:
                 enable_overlay=system_data.get('enable_overlay', False),
                 kill_switch_key=system_data.get('kill_switch_key', 'F12')
             )
+
+    def _parse_key_bindings(self, key_bindings_data: Dict[str, Any]) -> KeyBindingsConfig:
+        """
+        解析按键绑定配置
+
+        Args:
+            key_bindings_data: YAML 中的 key_bindings 字段
+
+        Returns:
+            KeyBindingsConfig 对象
+        """
+        return KeyBindingsConfig(
+            # 移动
+            move_up=key_bindings_data.get('move_up', 'up'),
+            move_down=key_bindings_data.get('move_down', 'down'),
+            move_left=key_bindings_data.get('move_left', 'left'),
+            move_right=key_bindings_data.get('move_right', 'right'),
+            # 动作
+            attack=key_bindings_data.get('attack', 'x'),
+            skill=key_bindings_data.get('skill', 'z'),
+            jump=key_bindings_data.get('jump', 'c'),
+            pick_up=key_bindings_data.get('pick_up', 'x'),
+            # 技能栏
+            skill_1=key_bindings_data.get('skill_1', '1'),
+            skill_2=key_bindings_data.get('skill_2', '2'),
+            skill_3=key_bindings_data.get('skill_3', '3'),
+            skill_4=key_bindings_data.get('skill_4', '4'),
+            skill_5=key_bindings_data.get('skill_5', '5'),
+            skill_6=key_bindings_data.get('skill_6', '6'),
+            skill_7=key_bindings_data.get('skill_7', '7'),
+            skill_8=key_bindings_data.get('skill_8', '8'),
+            # 道具栏
+            potion_1=key_bindings_data.get('potion_1', '1'),
+            potion_2=key_bindings_data.get('potion_2', '2'),
+            potion_3=key_bindings_data.get('potion_3', '3'),
+            potion_4=key_bindings_data.get('potion_4', '4'),
+            potion_5=key_bindings_data.get('potion_5', '5'),
+            potion_6=key_bindings_data.get('potion_6', '6'),
+        )
 
     def _validate_config(self) -> None:
         """验证配置有效性"""
