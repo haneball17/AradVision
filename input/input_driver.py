@@ -615,6 +615,24 @@ class InputDriver(BaseInputDriver):
 
         return self.tap(key) if duration <= 0 else self.hold(key, duration)
 
+    def _parse_direction(self, key: str) -> Optional[tuple[int, int]]:
+        """
+        解析方向键名为 (dx, dy) 向量
+
+        Args:
+            key: 按键名称
+
+        Returns:
+            (dx, dy) 方量，或 None（非方向键）
+        """
+        direction_map = {
+            "up": (0, -1),
+            "down": (0, 1),
+            "left": (-1, 0),
+            "right": (1, 0),
+        }
+        return direction_map.get(key.lower())
+
     def _normalize_key(self, key: str) -> Optional[str]:
         """
         归一化按键并做合法性校验
