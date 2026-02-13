@@ -28,7 +28,11 @@ class GameInputTester:
     """游戏输入测试器"""
 
     def __init__(self):
-        self.driver = InputDriver(enable_jitter=True)
+        # 创建输入驱动（使用配置文件中的设置）
+        self.driver = InputDriver(
+            enable_jitter=True,
+            # key_bindings 和 window_title 会从配置文件加载
+        )
         logger.info("InputDriver 初始化完成")
 
     def test_basic_keys(self):

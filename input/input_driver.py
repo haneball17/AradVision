@@ -213,10 +213,6 @@ class InputDriver(BaseInputDriver):
                 CommandType.PICKUP: key_bindings.get("pick_up", "x"),  # 拾取与攻击共用
                 CommandType.SKILL: key_bindings.get("skill", "z"),
                 CommandType.JUMP: key_bindings.get("jump", "c"),
-                CommandType.MOVE_UP: key_bindings.get("move_up", "up"),
-                CommandType.MOVE_DOWN: key_bindings.get("move_down", "down"),
-                CommandType.MOVE_LEFT: key_bindings.get("move_left", "left"),
-                CommandType.MOVE_RIGHT: key_bindings.get("move_right", "right"),
             }
             # 技能栏（通过 skill_index 映射）
             for i in range(1, 9):
@@ -229,10 +225,6 @@ class InputDriver(BaseInputDriver):
                 CommandType.PICKUP: "x",  # 拾取与攻击共用
                 CommandType.SKILL: "z",
                 CommandType.JUMP: "c",
-                CommandType.MOVE_UP: "up",
-                CommandType.MOVE_DOWN: "down",
-                CommandType.MOVE_LEFT: "left",
-                CommandType.MOVE_RIGHT: "right",
             }
             # 技能栏默认映射到数字键
             for i in range(1, 9):
@@ -285,8 +277,8 @@ class InputDriver(BaseInputDriver):
                     return False
                 return self.tap(key)
 
-            # 处理其他动作指令（ATTACK, SKILL, JUMP, PICKUP）
-            if action in (CommandType.ATTACK, CommandType.SKILL, CommandType.JUMP, CommandType.PICKUP):
+            # 处理其他动作指令（ATTACK, 无 skill_index 的 SKILL, JUMP, PICKUP）
+            if action in (CommandType.ATTACK, CommandType.JUMP, CommandType.PICKUP):
                 key = self._action_to_key.get(action)
                 if not key:
                     logger.warning(f"动作 {action.value} 未配置按键")
@@ -294,6 +286,10 @@ class InputDriver(BaseInputDriver):
                 return self.tap(key) if command.duration <= 0 else self.hold(
                     key, command.duration,
                 )
+            # 处理 PICKUP（单独处理，因为可能与 ATTACK 共用按键）
+            if action == CommandType.PICKUP:
+                key = self._action_to_key.get(action)
+                return self.tap(key)
 
             logger.warning(f"不支持的指令类型: {action}")
             return False
