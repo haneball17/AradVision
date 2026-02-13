@@ -85,17 +85,34 @@ class WindowManager:
         """
         检查游戏窗口是否在前台
 
+        使用精确 hwnd 匹配而非子串匹配，避免误判：
+        - 错误方式：检查 "DNF" 是否在前台窗口标题中
+        - 正确方式：检查前台窗口的 hwnd 是否就是游戏窗口的 hwnd
+
         Returns:
             游戏窗口是否为前台窗口
         """
         try:
             import win32gui
-            hwnd = win32gui.GetForegroundWindow()
-            title = win32gui.GetWindowText(hwnd)
-            is_focused = self.target_title in title.lower()
 
-            logger.debug(f"[WindowManager.is_focused] 当前前台: '{title}', 焦点匹配: {is_focused}")
-            logger.debug(f"[WindowManager.is_focused] 目标标题: '{self.target_title}', 实际标题: '{title.lower()}'")
+            # 获取当前前台窗口的 hwnd
+            foreground_hwnd = win32gui.GetForegroundWindow()
+            foreground_title = win32gui.GetWindowText(foreground_hwnd)
+
+            # 获取目标游戏窗口的 hwnd（精确匹配）
+            target_hwnd = self.get_hwnd()
+
+            if target_hwnd is None:
+                # 找不到目标窗口，假设未聚焦
+                logger.debug(f"[WindowManager.is_focused] 找不到目标窗口，假设未聚焦")
+                return False
+
+            # 精确比较：当前前台窗口就是目标窗口？
+            is_focused = (foreground_hwnd == target_hwnd)
+
+            logger.debug(f"[WindowManager.is_focused] 当前前台 hwnd: {foreground_hwnd}, title: '{foreground_title}'")
+            logger.debug(f"[WindowManager.is_focused] 目标游戏 hwnd: {target_hwnd}")
+            logger.debug(f"[WindowManager.is_focused] 焦点匹配: {is_focused}")
 
             return is_focused
         except ImportError:
