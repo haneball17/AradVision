@@ -471,7 +471,7 @@ class InputDriver(BaseInputDriver):
                 if not key:
                     logger.warning(f"技能栏位 {command.skill_index} 未配置按键")
                     return False
-                return self.tap(key)
+                return self._tap_direct(key)
 
             # 处理其他动作指令（ATTACK, 无 skill_index 的 SKILL, JUMP, PICKUP）
             if action in (CommandType.ATTACK, CommandType.JUMP, CommandType.PICKUP):
@@ -479,13 +479,13 @@ class InputDriver(BaseInputDriver):
                 if not key:
                     logger.warning(f"动作 {action.value} 未配置按键")
                     return False
-                return self.tap(key) if command.duration <= 0 else self.hold(
+                return self._tap_direct(key) if command.duration <= 0 else self._hold_direct(
                     key, command.duration,
                 )
             # 处理 PICKUP（单独处理，因为可能与 ATTACK 共用按键）
             if action == CommandType.PICKUP:
                 key = self._action_to_key.get(action)
-                return self.tap(key)
+                return self._tap_direct(key)
 
             logger.warning(f"不支持的指令类型: {action}")
             return False
@@ -493,6 +493,8 @@ class InputDriver(BaseInputDriver):
     def tap(self, key: str) -> bool:
         """
         短按按键（按下 -> 等待 -> 弹起）
+
+        注意：此方法通过 execute() 调用，确保窗口焦点检查被执行。
 
         Args:
             key: 按键码
@@ -504,23 +506,45 @@ class InputDriver(BaseInputDriver):
         if not normalized:
             return False
 
-        with self._lock:
-            if not self.is_running:
-                logger.warning(f"输入驱动已停止，忽略 tap({normalized})")
-                return False
-            self._press_unlocked(normalized)
+        # 判断是否为方向键
+        direction = self._parse_direction(normalized)
 
-        sleep_time = self._resolve_tap_duration()
-        time.sleep(sleep_time)
+        if direction is not None:
+            # 方向键使用 MOVE 类型
+            command = Command(
+                action_type=CommandType.MOVE,
+                direction=direction,
+                duration=0,
+                metadata={"raw_key": normalized}
+            )
+            logger.debug(f"[InputDriver.tap] 方向键: {normalized}")
+            return self.execute(command)
 
-        with self._lock:
-            self._release_unlocked(normalized)
+        # 其他按键：尝试映射到动作类型
+        # 首先检查是否是数字键（技能栏）
+        if normalized.isdigit() and 1 <= int(normalized) <= 8:
+            command = Command(
+                action_type=CommandType.SKILL,
+                skill_index=int(normalized),
+                metadata={"raw_key": normalized}
+            )
+            logger.debug(f"[InputDriver.tap] 技能栏: {normalized}")
+            return self.execute(command)
 
-        return True
+        # 映射到 ATTACK 动作（x/z/c 等按键）
+        command = Command(
+            action_type=CommandType.ATTACK,
+            duration=0,
+            metadata={"raw_key": normalized}
+        )
+        logger.debug(f"[InputDriver.tap] 按键: {normalized}")
+        return self.execute(command)
 
     def hold(self, key: str, duration: float) -> bool:
         """
         长按按键（按下 -> 等待 duration -> 弹起）
+
+        注意：此方法通过 execute() 调用，确保窗口焦点检查被执行。
 
         Args:
             key: 按键码
@@ -536,16 +560,61 @@ class InputDriver(BaseInputDriver):
         if not normalized:
             return False
 
+        # 解析方向键
+        direction = self._parse_direction(normalized)
+
+        if direction is None:
+            # 非方向键，hold 不支持
+            logger.warning(f"[InputDriver.hold] 按键 {normalized} 不是方向键，hold 操作仅支持方向键")
+            return False
+
+        # 创建 MOVE 命令并通过 execute() 执行
+        command = Command(
+            action_type=CommandType.MOVE,
+            direction=direction,
+            duration=duration,
+            metadata={"raw_key": normalized}
+        )
+
+        logger.debug(f"[InputDriver.hold] 按键: {normalized}, 持续时间: {duration:.3f}s")
+        return self.execute(command)
+
+    def _tap_direct(self, key: str) -> bool:
+        """
+        直接执行 tap 操作（绕过 execute()，避免循环调用）
+
+        此方法仅供 execute() 内部调用，不包含窗口焦点检查。
+        """
         with self._lock:
             if not self.is_running:
-                logger.warning(f"输入驱动已停止，忽略 hold({normalized}, {duration:.3f})")
+                logger.warning(f"输入驱动已停止，忽略 _tap_direct({key})")
                 return False
-            self._press_unlocked(normalized)
+            self._press_unlocked(key)
+
+        sleep_time = self._resolve_tap_duration()
+        time.sleep(sleep_time)
+
+        with self._lock:
+            self._release_unlocked(key)
+
+        return True
+
+    def _hold_direct(self, key: str, duration: float) -> bool:
+        """
+        直接执行 hold 操作（绕过 execute()，避免循环调用）
+
+        此方法仅供 execute() 内部调用，不包含窗口焦点检查。
+        """
+        with self._lock:
+            if not self.is_running:
+                logger.warning(f"输入驱动已停止，忽略 _hold_direct({key}, {duration:.3f})")
+                return False
+            self._press_unlocked(key)
 
         time.sleep(self._resolve_hold_duration(duration))
 
         with self._lock:
-            self._release_unlocked(normalized)
+            self._release_unlocked(key)
 
         return True
 
@@ -613,7 +682,7 @@ class InputDriver(BaseInputDriver):
         if not key:
             return False
 
-        return self.tap(key) if duration <= 0 else self.hold(key, duration)
+        return self._tap_direct(key) if duration <= 0 else self._hold_direct(key, duration)
 
     def _parse_direction(self, key: str) -> Optional[tuple[int, int]]:
         """
