@@ -48,12 +48,59 @@ class CaptureConfig:
 
 
 @dataclass
+class KeyBindingsConfig:
+    """按键绑定配置
+
+    设计说明：
+    - 动作名与 Command.CommandType 对应
+    - 按键值为 pydirectinput 支持的按键名
+    - 用户可通过配置文件自定义按键
+    """
+    # 移动
+    move_up: str = "up"         # 方向键上 ↑
+    move_down: str = "down"      # 方向键下 ↓
+    move_left: str = "left"      # 方向键左 ←
+    move_right: str = "right"    # 方向键右 →
+
+    # 动作
+    attack: str = "x"            # 普通攻击
+    skill: str = "z"             # 通用技能
+    jump: str = "c"              # 跳跃
+    pick_up: str = "x"           # 拾取物品（与攻击共用）
+
+    # 技能栏
+    skill_1: str = "1"
+    skill_2: str = "2"
+    skill_3: str = "3"
+    skill_4: str = "4"
+    skill_5: str = "5"
+    skill_6: str = "6"
+    skill_7: str = "7"
+    skill_8: str = "8"
+
+    # 道具栏
+    potion_1: str = "1"
+    potion_2: str = "2"
+    potion_3: str = "3"
+    potion_4: str = "4"
+    potion_5: str = "5"
+    potion_6: str = "6"
+
+
+@dataclass
 class InputConfig:
     """输入配置"""
     type: str = "mock"  # mock, real
     delay_min: float = 0.05
     delay_max: float = 0.15
     randomization: bool = True
+
+    # 按键绑定（新增）
+    key_bindings: KeyBindingsConfig = field(default_factory=KeyBindingsConfig)
+
+    # 窗口管理（新增）
+    check_focus: bool = True       # 是否检查窗口焦点
+    auto_activate: bool = False    # 是否自动激活游戏窗口
 
 
 @dataclass

@@ -263,17 +263,23 @@ class Command:
     """
     动作指令
 
+    设计原则：
+    - 上层模块只描述动作，不关心具体按键
+    - 按键映射由 InputDriver 根据配置决定
+
     Attributes:
         action_type: 指令类型
         direction: 移动方向 (dx, dy)，None表示不移动
-        key_code: 按键码 (如 "x", "a", "space")
+        key_code: 按键码 (如 "x", "a", "space") - 已废弃，保留兼容
         duration: 持续时间 (秒)
+        skill_index: 技能栏索引 (1-8)，用于 SKILL 命令
         metadata: 附加元数据
     """
     action_type: CommandType
     direction: Optional[Tuple[int, int]]
-    key_code: Optional[str]
+    key_code: Optional[str]  # 已废弃，保留兼容性
     duration: float
+    skill_index: Optional[int] = None  # 技能栏索引
     metadata: Dict[str, Any]
 
     def __init__(

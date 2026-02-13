@@ -45,7 +45,7 @@ capture:
 # ==================== 输入配置 ====================
 input:
   # 输入驱动类型: mock（模拟）, real（真实硬件输入）
-  type: mock
+  type: real
 
   # 输入延迟范围（秒）- 用于反检测
   delay_min: 0.05
@@ -53,6 +53,36 @@ input:
 
   # 是否启用随机化（延迟、操作间隔等）
   randomization: true
+
+  # 按键绑定配置
+  key_bindings:
+    # 移动（方向键）
+    move_up: up         # 方向键上 ↑
+    move_down: down      # 方向键下 ↓
+    move_left: left      # 方向键左 ←
+    move_right: right    # 方向键右 →
+
+    # 动作
+    attack: x            # 普通攻击
+    skill: z             # 通用技能
+    jump: c              # 跳跃
+    pick_up: x           # 拾取物品（与攻击共用 x 键）
+
+    # 技能栏
+    skill_1: "1"
+    skill_2: "2"
+    skill_3: "3"
+    skill_4: "4"
+    skill_5: "5"
+    skill_6: "6"
+    skill_7: "7"
+    skill_8: "8"
+
+  # 窗口管理
+  window:
+    check_focus: true       # 是否检查窗口焦点
+    auto_activate: true      # 自动激活游戏窗口到前台
+    title: DNF           # 游戏窗口标题（用于查找）
 
 # ==================== 战斗配置 ====================
 combat:
