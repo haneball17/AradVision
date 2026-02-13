@@ -102,17 +102,21 @@ class WindowManager:
             # 获取目标游戏窗口的 hwnd（精确匹配）
             target_hwnd = self.get_hwnd()
 
+            logger.info(f"[WindowManager.is_focused] ===== 焦点检查 =====")
+            logger.info(f"[WindowManager.is_focused] 前台窗口: hwnd={foreground_hwnd}, title='{foreground_title}'")
+            logger.info(f"[WindowManager.is_focused] 目标游戏: hwnd={target_hwnd}")
+
             if target_hwnd is None:
                 # 找不到目标窗口，假设未聚焦
-                logger.debug(f"[WindowManager.is_focused] 找不到目标窗口，假设未聚焦")
+                logger.warning(f"[WindowManager.is_focused] 找不到目标窗口，返回 False")
                 return False
 
             # 精确比较：当前前台窗口就是目标窗口？
             is_focused = (foreground_hwnd == target_hwnd)
 
-            logger.debug(f"[WindowManager.is_focused] 当前前台 hwnd: {foreground_hwnd}, title: '{foreground_title}'")
-            logger.debug(f"[WindowManager.is_focused] 目标游戏 hwnd: {target_hwnd}")
-            logger.debug(f"[WindowManager.is_focused] 焦点匹配: {is_focused}")
+            logger.info(f"[WindowManager.is_focused] hwnd 比较: {foreground_hwnd} == {target_hwnd} = {is_focused}")
+            logger.info(f"[WindowManager.is_focused] 结果: {'游戏窗口在前台' if is_focused else '游戏窗口不在前台'}")
+            logger.info(f"[WindowManager.is_focused] =======================")
 
             return is_focused
         except ImportError:
