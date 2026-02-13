@@ -238,14 +238,29 @@ class WindowManager:
                 else:
                     # ========== 方法 1: AttachThreadInput 机制 ==========
                     logger.debug(f"[WindowManager.bring_to_front] 尝试 AttachThreadInput 附加线程")
+                    logger.debug(f"[WindowManager.bring_to_front]   - 当前线程 ID: {current_thread_id}")
+                    logger.debug(f"[WindowManager.bring_to_front]   - 目标线程 ID: {target_thread_id}")
+                    logger.debug(f"[WindowManager.bring_to_front]   - 目标进程 ID: {target_process_id}")
+
                     # AttachThreadInput(idAttach, idAttachTo, fAttach)
                     # fAttach=TRUE 表示附加，FALSE 表示分离
-                    attach_result = win32process.AttachThreadInput(
-                        current_thread_id,
-                        target_thread_id,
-                        True  # fAttach=TRUE 表示附加线程
-                    )
-                    logger.debug(f"[WindowManager.bring_to_front] AttachThreadInput 返回: {attach_result}")
+                    try:
+                        attach_result = win32process.AttachThreadInput(
+                            current_thread_id,
+                            target_thread_id,
+                            True  # fAttach=TRUE 表示附加线程
+                        )
+                        logger.debug(f"[WindowManager.bring_to_front] AttachThreadInput 返回: {attach_result} (类型: {type(attach_result).__name__})")
+                    except Exception as attach_error:
+                        logger.error(f"[WindowManager.bring_to_front] AttachThreadInput 调用异常: {type(attach_error).__name__}: {attach_error}")
+                        logger.debug(f"[WindowManager.bring_to_front]   - 异常详情: 调用失败时的 GetLastError() 值可能提供更多信息")
+                        try:
+                            import win32api
+                            last_error = win32api.GetLastError()
+                            logger.debug(f"[WindowManager.bring_to_front]   - GetLastError() 返回: {last_error}")
+                        except ImportError:
+                            logger.warning("[WindowManager.bring_to_front]   - 无法获取 GetLastError（非 Windows 平台）")
+                        attach_result = None
 
                     if attach_result:
                         # 现在可以成功激活窗口
