@@ -240,9 +240,12 @@ class WindowManager:
                     # 将当前线程的输入处理附加到目标线程
                     # 这使系统认为我们的输入来自该线程（"用户输入"）
                     logger.debug(f"[WindowManager.bring_to_front] 调用 AttachThreadInput 附加线程")
+                    # AttachThreadInput(idAttach, idAttachTo, fAttach)
+                    # fAttach=TRUE 表示附加，FALSE 表示分离
                     attach_result = win32process.AttachThreadInput(
                         current_thread_id,
-                        target_thread_id
+                        target_thread_id,
+                        True  # fAttach=TRUE 表示附加线程
                     )
                     logger.debug(f"[WindowManager.bring_to_front] AttachThreadInput 返回: {attach_result}")
 
