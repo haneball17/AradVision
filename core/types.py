@@ -288,6 +288,7 @@ class Command:
         direction: Optional[Tuple[int, int]] = None,
         key_code: Optional[str] = None,
         duration: float = 0.0,
+        skill_index: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cmd_type: Optional[CommandType] = None,
     ) -> None:
@@ -319,6 +320,7 @@ class Command:
         self.direction = direction
         self.key_code = key_code
         self.duration = duration
+        self.skill_index = skill_index
         self.metadata = metadata.copy() if metadata is not None else {}
 
     @property
