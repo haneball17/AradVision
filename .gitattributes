@@ -1,6 +1,9 @@
 # Git 属性配置
 # 确保不同平台下的文件处理正确
 
+# PowerShell 脚本使用 UTF-8 with BOM 和 CRLF 换行
+scripts/install.ps1 text working-file-encoding=UTF-8 eol=crlf
+
 # Windows 批处理文件使用 CRLF 换行
 *.bat text eol=crlf
 
