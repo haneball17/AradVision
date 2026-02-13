@@ -67,11 +67,16 @@ class WindowManager:
 
     职责：
     - 检测游戏窗口是否在前台
-    - 可选：自动激活游戏窗口
+    - 自动激活游戏窗口（多种方法增强可靠性）
+
+    Windows 限制说明：
+    - SetForegroundWindow 可能被系统阻止（用户交互时）
+    - 使用多种方法组合提高成功率
     """
 
     def __init__(self, window_title: str):
         self.target_title = window_title.lower()
+        self._alt_key_state = None  # 用于 Alt 键技巧
         logger.debug(f"WindowManager 初始化，目标窗口: {window_title}")
 
     def is_focused(self) -> bool:
@@ -110,22 +115,91 @@ class WindowManager:
         """
         激活游戏窗口到前台
 
+        使用多种方法提高成功率：
+        1. 直接 SetForegroundWindow
+        2. Alt 键技巧（模拟用户操作）
+        3. 重试机制（最多 3 次）
+
         Returns:
             是否成功激活
         """
+        max_retries = 3
+        delay = 0.05  # 每次尝试间隔
+
+        for attempt in range(max_retries):
+            try:
+                import win32gui
+
+                hwnd = self.get_hwnd()
+                if not hwnd:
+                    logger.warning(f"未找到游戏窗口: {self.target_title}")
+                    return False
+
+                # 方法1: 尝试直接激活
+                try:
+                    win32gui.SetForegroundWindow(hwnd)
+                    logger.info(f"[尝试 {attempt+1}/{max_retries}] 直接激活窗口")
+                    time.sleep(delay)
+                    # 验证是否成功
+                    if win32gui.GetForegroundWindow() == hwnd:
+                        logger.info("✓ 窗口激活成功")
+                        return True
+                except Exception as e:
+                    logger.debug(f"SetForegroundWindow 失败: {e}")
+
+                # 方法2: Alt 键技巧（模拟用户点击）
+                try:
+                    self._simulate_alt_tab_click()
+                    logger.info(f"[尝试 {attempt+1}/{max_retries}] Alt+Tab 技巧")
+                    time.sleep(delay)
+                    # 验证是否成功
+                    if win32gui.GetForegroundWindow() == hwnd:
+                        logger.info("✓ 窗口激活成功 (Alt+Tab)")
+                        return True
+                except Exception as e:
+                    logger.debug(f"Alt+Tab 技巧失败: {e}")
+
+            except ImportError:
+                logger.warning("win32gui 不可用，跳过窗口激活")
+                return True
+            except Exception as e:
+                logger.error(f"窗口激活异常: {e}")
+                return False
+
+        logger.warning(f"经过 {max_retries} 次尝试，窗口激活失败")
+        return False
+
+    def _simulate_alt_tab_click(self) -> None:
+        """
+        模拟 Alt+Tab 组合键来切换窗口焦点
+
+        原理：按住 Alt，短暂按 Tab，释放 Alt
+        这会触发 Windows 的窗口切换功能
+        """
         try:
             import win32gui
-            hwnd = self.get_hwnd()
-            if hwnd:
-                win32gui.SetForegroundWindow(hwnd)
-                logger.info(f"游戏窗口已激活到前台: {self.target_title}")
-                return True
-            else:
-                logger.warning(f"未找到游戏窗口: {self.target_title}")
-                return False
+            import win32con
+
+            # 按下 Alt
+            win32con.key_event(win32con.WM_KEYDOWN, 0x12)  # 0x12 是 VK_MENU
+            time.sleep(0.05)
+
+            # 按 Tab
+            win32con.key_event(win32con.WM_KEYDOWN, 0x09)  # 0x09 是 VK_TAB
+            time.sleep(0.05)
+
+            # 释放 Tab
+            win32con.key_event(win32con.WM_KEYUP, 0x09)
+            time.sleep(0.05)
+
+            # 释放 Alt
+            win32con.key_event(win32con.WM_KEYUP, 0x12)
+
+            logger.debug("Alt+Tab 组合键已发送")
+        except ImportError:
+            logger.warning("win32con 不可用，跳过 Alt+Tab 模拟")
         except Exception as e:
-            logger.error(f"激活窗口失败: {e}")
-            return False
+            logger.warning(f"Alt+Tab 模拟失败: {e}")
 
 
 class InputDriver(BaseInputDriver):
@@ -252,12 +326,11 @@ class InputDriver(BaseInputDriver):
             if self._check_focus and self._window_manager:
                 if not self._window_manager.is_focused():
                     logger.warning("游戏窗口不在前台，尝试激活窗口")
-                    if self._auto_activate:
-                        if not self._window_manager.bring_to_front():
-                            logger.warning("无法激活游戏窗口，输入被忽略")
-                            return False
-                    # 等待窗口激活
-                    time.sleep(0.1)
+                    # 尝试自动激活窗口（重试机制内置）
+                    success = self._window_manager.bring_to_front()
+                    if not success:
+                        # 激活失败，记录警告但继续执行
+                        logger.warning("窗口激活失败，输入可能无效")
 
             action = command.action_type
 
