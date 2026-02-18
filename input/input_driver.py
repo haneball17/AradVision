@@ -102,9 +102,9 @@ class WindowManager:
             # 获取目标游戏窗口的 hwnd（精确匹配）
             target_hwnd = self.get_hwnd()
 
-            logger.info(f"[WindowManager.is_focused] ===== 焦点检查 =====")
-            logger.info(f"[WindowManager.is_focused] 前台窗口: hwnd={foreground_hwnd}, title='{foreground_title}'")
-            logger.info(f"[WindowManager.is_focused] 目标游戏: hwnd={target_hwnd}")
+            logger.debug(f"[WindowManager.is_focused] ===== 焦点检查 =====")
+            logger.debug(f"[WindowManager.is_focused] 前台窗口: hwnd={foreground_hwnd}, title='{foreground_title}'")
+            logger.debug(f"[WindowManager.is_focused] 目标游戏: hwnd={target_hwnd}")
 
             if target_hwnd is None:
                 # 找不到目标窗口，假设未聚焦
@@ -114,9 +114,9 @@ class WindowManager:
             # 精确比较：当前前台窗口就是目标窗口？
             is_focused = (foreground_hwnd == target_hwnd)
 
-            logger.info(f"[WindowManager.is_focused] hwnd 比较: {foreground_hwnd} == {target_hwnd} = {is_focused}")
-            logger.info(f"[WindowManager.is_focused] 结果: {'游戏窗口在前台' if is_focused else '游戏窗口不在前台'}")
-            logger.info(f"[WindowManager.is_focused] =======================")
+            logger.debug(f"[WindowManager.is_focused] hwnd 比较: {foreground_hwnd} == {target_hwnd} = {is_focused}")
+            logger.debug(f"[WindowManager.is_focused] 结果: {'游戏窗口在前台' if is_focused else '游戏窗口不在前台'}")
+            logger.debug(f"[WindowManager.is_focused] =======================")
 
             return is_focused
         except ImportError:
@@ -149,9 +149,9 @@ class WindowManager:
             win32gui.EnumWindows(enum_callback, matching_windows)
 
             if matching_windows:
-                logger.info(f"[WindowManager.get_hwnd] 找到 {len(matching_windows)} 个匹配窗口:")
+                logger.debug(f"[WindowManager.get_hwnd] 找到 {len(matching_windows)} 个匹配窗口:")
                 for hwnd, title in matching_windows:
-                    logger.info(f"  - hwnd={hwnd}, title='{title}'")
+                    logger.debug(f"  - hwnd={hwnd}, title='{title}'")
                 return matching_windows[0][0]  # 返回第一个匹配
             else:
                 logger.warning(f"[WindowManager.get_hwnd] 未找到包含 '{self.target_title}' 的窗口")
@@ -502,6 +502,12 @@ class InputDriver(BaseInputDriver):
                 logger.warning("输入驱动已停止，忽略 execute 调用")
                 return False
 
+            action = command.action_type
+
+            # STOP 仅用于释放按键，不属于“接管输入动作”，因此不做前台检查/抢前台。
+            if action == CommandType.STOP:
+                return self._release_all_pressed()
+
             # ========== 窗口焦点检查（详细日志）==========
             logger.debug(f"[InputDriver.execute] ==================== 输入前检查 ====================")
             logger.debug(f"[InputDriver.execute] 动作类型: {command.action_type.value}")
@@ -526,15 +532,9 @@ class InputDriver(BaseInputDriver):
                     else:
                         logger.warning("[InputDriver.execute] auto_activate=False，跳过窗口激活，输入可能无效")
                 else:
-                    logger.info("[InputDriver.execute] ✓ 游戏窗口在前台")
+                    logger.debug("[InputDriver.execute] ✓ 游戏窗口在前台")
 
             logger.debug(f"[InputDriver.execute] ==================================================")
-
-            action = command.action_type
-
-            # 处理 STOP 命令
-            if action == CommandType.STOP:
-                return self._release_all_pressed()
 
             # 处理移动指令
             if action == CommandType.MOVE:
