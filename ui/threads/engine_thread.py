@@ -13,7 +13,7 @@ from typing import Any, Optional
 from PyQt5.QtCore import QThread
 
 from core.logger import logger
-from core.config import ConfigLoader
+from core.config import CaptureConfig, ConfigLoader
 from ui.threads.signals import EngineSignals
 
 # 导入核心模块
@@ -129,9 +129,19 @@ class EngineThread(QThread):
 
         try:
             # 初始化核心引擎（按配置注入，缺失时回退默认值）
-            config_use_mock = bool(self._get_config_value("capture", "use_mock", False))
-            capture_engine = create_capture_engine(use_mock=config_use_mock)
+            capture_config = self._build_capture_config()
+            config_use_mock = bool(capture_config.use_mock)
+            capture_engine = create_capture_engine(
+                config=capture_config,
+                use_mock=config_use_mock,
+                backend=capture_config.backend,
+            )
             capture_engine.start()  # 启动捕获引擎
+            logger.info(
+                "UI 线程捕获引擎启动: "
+                f"requested_backend={capture_config.backend}, "
+                f"active_backend={getattr(capture_engine, 'active_backend', 'unknown')}"
+            )
             detector = self._create_detector()
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
             fsm = BotFSM()
@@ -226,6 +236,27 @@ class EngineThread(QThread):
         if section_obj is None:
             return default
         return getattr(section_obj, key, default)
+
+    def _build_capture_config(self) -> CaptureConfig:
+        """
+        构建统一 CaptureConfig，避免 dict/AppConfig 分支在多处散落。
+        """
+        if isinstance(self.config, dict):
+            capture = self.config.get("capture", {})
+            return CaptureConfig(
+                window_title=capture.get("window_title", "地下城与勇士"),
+                window_class=capture.get("window_class", "D3D Window"),
+                target_fps=int(capture.get("target_fps", 30)),
+                width=int(capture.get("width", 1920)),
+                height=int(capture.get("height", 1080)),
+                monitor_index=int(capture.get("monitor_index", 1)),
+                use_mock=bool(capture.get("use_mock", False)),
+                backend=str(capture.get("backend", "auto")),
+                wgc_show_cursor=bool(capture.get("wgc_show_cursor", False)),
+                wgc_force_borderless=bool(capture.get("wgc_force_borderless", False)),
+            )
+
+        return self.config.capture
 
     def _create_detector(self):
         """

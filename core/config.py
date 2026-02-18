@@ -45,6 +45,9 @@ class CaptureConfig:
     height: int = 1080
     monitor_index: int = 1
     use_mock: bool = False  # 是否使用 Mock 捕获引擎
+    backend: str = "auto"  # auto, wgc, mss
+    wgc_show_cursor: bool = False  # WGC 是否包含鼠标光标
+    wgc_force_borderless: bool = False  # WGC 是否关闭捕获边框
 
 
 @dataclass
@@ -238,6 +241,9 @@ class ConfigLoader:
                 height=capture_data.get('height', 1080),
                 monitor_index=capture_data.get('monitor_index', 1),
                 use_mock=capture_data.get('use_mock', False),
+                backend=capture_data.get('backend', 'auto'),
+                wgc_show_cursor=capture_data.get('wgc_show_cursor', False),
+                wgc_force_borderless=capture_data.get('wgc_force_borderless', False),
             )
 
         # 解析 input 配置
@@ -326,6 +332,8 @@ class ConfigLoader:
         # 验证截图配置
         if self._config.capture.target_fps <= 0:
             raise ConfigurationError("目标 FPS 必须大于 0")
+        if self._config.capture.backend not in {"auto", "wgc", "mss"}:
+            raise ConfigurationError("capture.backend 必须是 auto/wgc/mss")
 
         # 验证战斗配置
         if self._config.combat.y_tolerance < 0:
@@ -356,7 +364,10 @@ class ConfigLoader:
                 'width': 1920,
                 'height': 1080,
                 'monitor_index': 1,
-                'use_mock': False
+                'use_mock': False,
+                'backend': 'auto',
+                'wgc_show_cursor': False,
+                'wgc_force_borderless': False,
             },
             'input': {
                 'type': 'mock',

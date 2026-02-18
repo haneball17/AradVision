@@ -41,6 +41,12 @@ AradVision is a Python project organized by domain modules:
 - Recommended naming pattern for summaries: `docs/工作总结_YYYY-MM-DD_<topic>.md` (example: `docs/工作总结_2026-02-11_输入模块联调.md`).
 - PRs should include: change summary, touched paths, test commands/results, risk notes, and rollback plan.
 
+## Documentation Organization Principles
+- 当任务存在明确“代码更改主题”时，必须先建立专题目录：`docs/{代码更改主题}/`。
+- 该主题的主方案文档必须命名为：`docs/{代码更改主题}/{代码更改主题}.md`。
+- 与该主题相关的所有文档（方案、实施记录、测试记录、阶段总结、专题工作总结等）必须统一放在 `docs/{代码更改主题}/` 下，不得分散到其他目录。
+- `代码更改主题` 由当前任务目标总结得到，要求语义明确、可追溯，能够直接反映本次改造核心内容。
+
 ## Security & Configuration Tips
 - Do not commit runtime artifacts (`__pycache__/`, logs, temporary files) or private/local configs.
 - Keep emergency stop behavior (`F12`) enabled in integration and real-run scenarios.

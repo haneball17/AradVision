@@ -158,10 +158,19 @@ class AradVisionApp:
             # 如果命令行指定了 use_mock，则优先使用命令行参数；否则按配置文件
             config_use_mock = getattr(config.capture, "use_mock", True)
             use_mock = config_use_mock if self.use_mock is None else self.use_mock
-            self._capture_engine = create_capture_engine(use_mock=use_mock)
+            requested_backend = getattr(config.capture, "backend", "auto")
+            self._capture_engine = create_capture_engine(
+                config=config.capture,
+                use_mock=use_mock,
+                backend=requested_backend,
+            )
             self._capture_engine.start()
             engine_type = "Mock" if use_mock else "真实"
-            logger.info(f"✓ {engine_type} 截图引擎启动成功")
+            active_backend = getattr(self._capture_engine, "active_backend", "unknown")
+            logger.info(
+                f"✓ {engine_type} 截图引擎启动成功 "
+                f"(requested_backend={requested_backend}, active_backend={active_backend})"
+            )
 
             # 2. 初始化检测器（按配置注入）
             self._detector = self._create_detector()

@@ -42,6 +42,18 @@ capture:
   # 是否使用 Mock 捕获引擎（true=生成随机帧，false=真实截图）
   use_mock: false
 
+  # 捕获后端:
+  # auto = Windows 优先 WGC，失败降级 MSS；非 Windows 直接 MSS
+  # wgc  = 强制优先 WGC（失败时按代码策略降级）
+  # mss  = 强制使用 MSS 屏幕区域捕获
+  backend: auto
+
+  # WGC 选项：是否捕获鼠标光标
+  wgc_show_cursor: false
+
+  # WGC 选项：是否关闭系统捕获边框（库支持时生效）
+  wgc_force_borderless: false
+
 # ==================== 输入配置 ====================
 input:
   # 输入驱动类型: mock（模拟）, real（真实硬件输入）
