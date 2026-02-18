@@ -1,10 +1,7 @@
-"""
-InputDriver 单元测试
-"""
+"""InputDriver 单元测试。"""
 
 import pytest
 
-from core.exceptions import InputError
 from core.types import Command, CommandType
 from input.input_driver import InputDriver, InvalidKeyError
 
@@ -55,11 +52,27 @@ def test_execute_move_by_direction(driver, fake_backend):
     assert fake_backend.events == [("down", "right"), ("up", "right")]
 
 
-def test_execute_attack_requires_key_code(driver):
-    """攻击类指令缺少 key_code 应报错。"""
+def test_execute_attack_should_use_mapping_without_key_code(driver, fake_backend):
+    """攻击指令无 key_code 时，应走动作映射默认键。"""
     cmd = Command(action_type=CommandType.ATTACK)
-    with pytest.raises(InputError):
-        driver.execute(cmd)
+    ok = driver.execute(cmd)
+    assert ok is True
+    assert fake_backend.events == [("down", "x"), ("up", "x")]
+
+
+def test_execute_skill_with_key_code_should_work(driver, fake_backend):
+    """技能指令支持直接使用 key_code。"""
+    cmd = Command(action_type=CommandType.SKILL, key_code="z")
+    ok = driver.execute(cmd)
+    assert ok is True
+    assert fake_backend.events == [("down", "z"), ("up", "z")]
+
+
+def test_tap_z_should_not_fallback_to_attack_mapping(driver, fake_backend):
+    """tap('z') 应使用技能键，而不是错误映射到攻击键。"""
+    ok = driver.tap("z")
+    assert ok is True
+    assert fake_backend.events == [("down", "z"), ("up", "z")]
 
 
 def test_invalid_key_should_raise(driver):
@@ -77,8 +90,8 @@ def test_stop_all_should_block_future_execute(driver, fake_backend):
     assert fake_backend.events == []
 
 
-def test_execute_stop_command_should_call_stop_all(driver):
-    """STOP 指令应触发 stop_all。"""
+def test_execute_stop_command_should_only_release_keys(driver):
+    """STOP 指令应仅释放按键，不应关闭驱动。"""
     cmd = Command(action_type=CommandType.STOP)
     assert driver.execute(cmd) is True
-    assert driver.is_running is False
+    assert driver.is_running is True

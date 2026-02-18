@@ -236,7 +236,8 @@ class ConfigLoader:
                 target_fps=capture_data.get('target_fps', 30),
                 width=capture_data.get('width', 1920),
                 height=capture_data.get('height', 1080),
-                monitor_index=capture_data.get('monitor_index', 1)
+                monitor_index=capture_data.get('monitor_index', 1),
+                use_mock=capture_data.get('use_mock', False),
             )
 
         # 解析 input 配置
@@ -354,7 +355,8 @@ class ConfigLoader:
                 'target_fps': 30,
                 'width': 1920,
                 'height': 1080,
-                'monitor_index': 1
+                'monitor_index': 1,
+                'use_mock': False
             },
             'input': {
                 'type': 'mock',

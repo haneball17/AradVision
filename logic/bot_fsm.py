@@ -11,21 +11,10 @@ from __future__ import annotations
 
 import threading
 import time
-from enum import Enum
 from typing import Dict, List, Optional
 
-from core.types import Command, CommandType, GameContext, GameObject
+from core.types import BotState, Command, CommandType, GameContext, GameObject
 from logic.combat import CombatLogic
-
-
-class BotState(Enum):
-    """机器人状态枚举。"""
-
-    IDLE = 0
-    COMBAT = 1
-    LOOT = 2
-    NAVIGATE = 3
-    RECOVERY = 4
 
 
 class BotFSM:

@@ -13,16 +13,16 @@ import time
 import signal
 import threading
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 # 添加项目根目录到 Python 路径
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.logger import logger, setup_logger
-from core.config import ConfigLoader, get_config
+from core.config import ConfigLoader
 from core.capture import CaptureEngine, create_capture_engine
-from core.exceptions import EmergencyStopException, AradVisionError
+from core.exceptions import EmergencyStopException
 
 # 可选导入视觉模块（需要 numpy）
 try:
@@ -67,12 +67,19 @@ except ImportError:
 
 # 导入决策层模块
 from logic.world_model import WorldModel
-from logic.bot_fsm import BotFSM, BotState
-from logic.combat import CombatLogic
-from logic.path_planner import PathPlanner
+from logic.bot_fsm import BotFSM
+
+# 导入检测器抽象基类
+from vision.base_detector import BaseDetector
 
 # 导入输入层模块
+from input.base_driver import BaseInputDriver
 from input.mock_driver import MockInputDriver
+try:
+    from input.input_driver import InputDriver
+    HAS_REAL_INPUT = True
+except ImportError:
+    HAS_REAL_INPUT = False
 
 
 class AradVisionApp:
@@ -82,7 +89,7 @@ class AradVisionApp:
     负责系统初始化、主循环、优雅退出等功能。
 
     数据流：
-        CaptureEngine → MockYoloDetector → WorldModel → BotFSM → CombatLogic/PathPlanner → MockInputDriver
+        CaptureEngine → Detector → WorldModel → BotFSM → InputDriver
 
     Examples:
         >>> app = AradVisionApp()
@@ -92,7 +99,7 @@ class AradVisionApp:
     def __init__(
         self,
         config_path: str = "configs/config.yaml",
-        use_mock: bool = True,
+        use_mock: Optional[bool] = None,
         use_ui: bool = False
     ):
         """
@@ -100,7 +107,7 @@ class AradVisionApp:
 
         Args:
             config_path: 配置文件路径
-            use_mock: 是否使用 Mock 模块（用于测试）
+            use_mock: 捕获引擎是否使用 Mock（None 表示按配置文件）
             use_ui: 是否启动 UI 控制面板
         """
         self.config_path = config_path
@@ -114,12 +121,10 @@ class AradVisionApp:
         # 模块实例
         self._capture_engine: Optional[CaptureEngine] = None
         self._kill_switch_thread: Optional[threading.Thread] = None
-        self._detector: Optional[MockYoloDetector] = None
+        self._detector: Optional[BaseDetector] = None
         self._world_model: Optional[WorldModel] = None
         self._fsm: Optional[BotFSM] = None
-        self._combat_logic: Optional[CombatLogic] = None
-        self._path_planner: Optional[PathPlanner] = None
-        self._input_driver: Optional[MockInputDriver] = None
+        self._input_driver: Optional[BaseInputDriver] = None
 
         # 引擎线程（仅 UI 模式）
         self._engine_thread: Optional["ui.threads.engine_thread.EngineThread"] = None
@@ -147,21 +152,20 @@ class AradVisionApp:
         logger.info("初始化系统模块...")
 
         try:
+            config = self.config_loader.config
+
             # 1. 初始化截图引擎（从配置文件读取 use_mock 设置）
-            # 如果命令行指定了 use_mock，则优先使用命令行参数
-            config_use_mock = self.config_loader.config.capture.use_mock if hasattr(self.config_loader.config.capture, 'use_mock') else True
-            use_mock = self.use_mock or config_use_mock
+            # 如果命令行指定了 use_mock，则优先使用命令行参数；否则按配置文件
+            config_use_mock = getattr(config.capture, "use_mock", True)
+            use_mock = config_use_mock if self.use_mock is None else self.use_mock
             self._capture_engine = create_capture_engine(use_mock=use_mock)
             self._capture_engine.start()
-            engine_type = "Mock" if self.use_mock else "真实"
+            engine_type = "Mock" if use_mock else "真实"
             logger.info(f"✓ {engine_type} 截图引擎启动成功")
 
-            # 2. 初始化检测器（使用 Mock 模块）
-            if HAS_VISION:
-                self._detector = MockYoloDetector(mock_mode="random")
-                logger.info("✓ Mock 检测器初始化成功")
-            else:
-                raise RuntimeError("vision 模块不可用，无法初始化检测器")
+            # 2. 初始化检测器（按配置注入）
+            self._detector = self._create_detector()
+            logger.info("✓ 检测器初始化成功")
 
             # 3. 初始化世界模型
             self._world_model = WorldModel(
@@ -174,17 +178,9 @@ class AradVisionApp:
             self._fsm = BotFSM()
             logger.info("✓ 状态机初始化成功")
 
-            # 5. 初始化战斗逻辑
-            self._combat_logic = CombatLogic()
-            logger.info("✓ 战斗逻辑初始化成功")
-
-            # 6. 初始化路径规划
-            self._path_planner = PathPlanner()
-            logger.info("✓ 路径规划初始化成功")
-
-            # 7. 初始化输入驱动（使用 Mock 模块）
-            self._input_driver = MockInputDriver()
-            logger.info("✓ Mock 输入驱动初始化成功")
+            # 5. 初始化输入驱动（按配置注入）
+            self._input_driver = self._create_input_driver()
+            logger.info("✓ 输入驱动初始化成功")
 
             logger.info("=" * 60)
             logger.info("所有模块初始化完成")
@@ -197,6 +193,64 @@ class AradVisionApp:
             logger.error(f"模块初始化失败: {e}", exc_info=True)
             self.shutdown()
             raise
+
+    def _create_detector(self) -> BaseDetector:
+        """
+        根据配置创建检测器。
+
+        当前仅内置 Mock 检测器；当配置为 yolo 但实现不可用时自动降级。
+        """
+        detector_type = self.config_loader.config.detector.type.lower()
+        if detector_type == "mock":
+            if not HAS_VISION:
+                raise RuntimeError("vision 模块不可用，无法初始化 Mock 检测器")
+            logger.info("检测器类型: mock")
+            return MockYoloDetector(mock_mode="random")
+
+        logger.warning(
+            f"检测器类型 '{detector_type}' 当前未接入真实实现，回退到 Mock 检测器"
+        )
+        if not HAS_VISION:
+            raise RuntimeError("vision 模块不可用，无法初始化检测器")
+        return MockYoloDetector(mock_mode="random")
+
+    @staticmethod
+    def _key_bindings_to_dict(key_bindings_obj) -> dict:
+        """
+        将 KeyBindingsConfig 转换为 dict。
+        """
+        if hasattr(key_bindings_obj, "__dict__"):
+            return dict(key_bindings_obj.__dict__)
+        return {}
+
+    def _create_input_driver(self) -> BaseInputDriver:
+        """
+        根据配置创建输入驱动。
+        """
+        input_config = self.config_loader.config.input
+        input_type = input_config.type.lower()
+        if input_type != "real":
+            logger.info("输入驱动类型: mock")
+            return MockInputDriver()
+
+        if not HAS_REAL_INPUT:
+            logger.warning("真实输入驱动依赖不可用，回退到 Mock 输入驱动")
+            return MockInputDriver()
+
+        key_bindings = self._key_bindings_to_dict(input_config.key_bindings)
+        delay_min = max(input_config.delay_min, 0.01)
+        delay_max = max(input_config.delay_max, delay_min)
+
+        logger.info("输入驱动类型: real")
+        return InputDriver(
+            enable_jitter=input_config.randomization,
+            jitter_mean=delay_min,
+            jitter_std=max((delay_max - delay_min) / 2.0, 0.0),
+            key_bindings=key_bindings,
+            window_title=self.config_loader.config.capture.window_title,
+            check_focus=input_config.check_focus,
+            auto_activate=input_config.auto_activate,
+        )
 
     def _initialize_ui_mode(self) -> None:
         """初始化 UI 模式"""
@@ -268,11 +322,11 @@ class AradVisionApp:
             # 初始化模块
             self.initialize()
 
-            # 启动紧急停止监控
-            self._start_kill_switch_monitor()
-
             # 进入主循环
             self.is_running = True
+
+            # 启动紧急停止监控
+            self._start_kill_switch_monitor()
 
             # UI 模式：启动 Qt 应用和主窗口
             if self._ui_mode:
@@ -354,9 +408,11 @@ class AradVisionApp:
         """
         frame_count = 0
         loop_start_time = time.perf_counter()
+        target_fps = max(1, int(self.config_loader.config.capture.target_fps))
+        target_frame_time = 1.0 / target_fps
 
         logger.info("=" * 60)
-        logger.info("进入主循环...")
+        logger.info(f"进入主循环... (target_fps={target_fps})")
         logger.info("=" * 60)
 
         while self.is_running:
@@ -385,53 +441,20 @@ class AradVisionApp:
                 # 4. 执行决策逻辑（状态机更新）
                 command = self._fsm.update(context)
 
-                # 5. 根据当前状态执行相应的决策逻辑
+                # 5. 执行 FSM 输出指令（避免二次决策导致语义漂移）
                 if command is not None:
-                    if command.action_type.name == "MOVE":
-                        # 移动指令：使用路径规划
-                        if context.hero and context.monsters:
-                            # 规划到最近怪物的路径
-                            move_cmd = self._path_planner.plan_to_nearest(
-                                context.hero,
-                                context.monsters
-                            )
-                            if move_cmd:
-                                self._input_driver.execute(move_cmd)
-                                logger.debug(
-                                    f"移动: direction={move_cmd.direction}, "
-                                    f"duration={move_cmd.duration:.2f}s"
-                                )
-
-                    elif command.action_type.name in ["ATTACK", "SKILL"]:
-                        # 攻击/技能指令：使用战斗逻辑
-                        if context.hero and context.monsters:
-                            combat_cmd = self._combat_logic.decide_attack(
-                                context.hero,
-                                context.monsters
-                            )
-                            if combat_cmd:
-                                self._input_driver.execute(combat_cmd)
-                                logger.debug(
-                                    f"攻击: action={combat_cmd.action_type.name}, "
-                                    f"key={combat_cmd.key_code}"
-                                )
-
-                    elif command.action_type.name == "PICKUP":
-                        # 拾取指令
-                        self._input_driver.execute(command)
-                        logger.debug("拾取物品")
-
-                    elif command.action_type.name == "STOP":
-                        # 停止指令
-                        self._input_driver.execute(command)
-                        logger.debug("停止所有输入")
+                    executed = self._input_driver.execute(command)
+                    if not executed:
+                        logger.debug(
+                            f"输入执行失败: action={command.action_type.name}, "
+                            f"metadata={command.metadata}"
+                        )
 
                 # 性能监控
                 frame_count += 1
                 frame_time = time.perf_counter() - frame_start
 
-                # 控制帧率（目标 30 FPS）
-                target_frame_time = 1.0 / 30.0
+                # 控制帧率（目标 FPS 从配置读取）
                 if frame_time < target_frame_time:
                     time.sleep(target_frame_time - frame_time)
 
@@ -460,7 +483,7 @@ class AradVisionApp:
         启动紧急停止监控线程（F12）
 
         这是一个后台线程，持续监控 F12 按键，
-        一旦检测到立即触发 EmergencyStopException。
+        一旦检测到立即设置 is_running=False 触发主循环退出。
         """
         def monitor():
             """紧急停止监控函数"""
@@ -471,13 +494,11 @@ class AradVisionApp:
                     if keyboard.is_pressed(self.config_loader.config.system.kill_switch_key):
                         logger.warning("检测到紧急停止按键 (F12)")
                         self.is_running = False
-                        raise EmergencyStopException("F12 紧急停止")
+                        break
                     time.sleep(0.05)  # 20Hz 检查频率
 
             except ImportError:
                 logger.warning("keyboard 模块未安装，紧急停止功能不可用")
-            except EmergencyStopException:
-                raise
             except Exception as e:
                 logger.error(f"紧急停止监控异常: {e}")
 
@@ -491,7 +512,12 @@ class AradVisionApp:
 
     def shutdown(self) -> None:
         """优雅关闭应用"""
-        if not self.is_running:
+        if (
+            not self.is_running
+            and self._capture_engine is None
+            and self._input_driver is None
+            and self._engine_thread is None
+        ):
             return
 
         logger.info("正在关闭 AradVision...")
@@ -572,7 +598,7 @@ def main():
     try:
         app = AradVisionApp(
             config_path=args.config,
-            use_mock=not args.no_mock,
+            use_mock=False if args.no_mock else None,
             use_ui=args.ui
         )
         app.run()

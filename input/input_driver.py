@@ -534,7 +534,7 @@ class InputDriver(BaseInputDriver):
 
             # 处理 STOP 命令
             if action == CommandType.STOP:
-                return self.stop_all()
+                return self._release_all_pressed()
 
             # 处理移动指令
             if action == CommandType.MOVE:
@@ -548,7 +548,21 @@ class InputDriver(BaseInputDriver):
                     return False
                 return self._tap_direct(key)
 
-            # 处理其他动作指令（ATTACK, 无 skill_index 的 SKILL, JUMP, PICKUP）
+            # 处理普通技能指令（无 skill_index）
+            if action == CommandType.SKILL:
+                key = None
+                if command.key_code:
+                    key = self._normalize_key(command.key_code)
+                else:
+                    key = self._action_to_key.get(CommandType.SKILL)
+                if not key:
+                    logger.warning("技能指令缺少可用按键")
+                    return False
+                return self._tap_direct(key) if command.duration <= 0 else self._hold_direct(
+                    key, command.duration,
+                )
+
+            # 处理其他动作指令（ATTACK, JUMP, PICKUP）
             if action in (CommandType.ATTACK, CommandType.JUMP, CommandType.PICKUP):
                 key = self._action_to_key.get(action)
                 if not key:
@@ -557,10 +571,6 @@ class InputDriver(BaseInputDriver):
                 return self._tap_direct(key) if command.duration <= 0 else self._hold_direct(
                     key, command.duration,
                 )
-            # 处理 PICKUP（单独处理，因为可能与 ATTACK 共用按键）
-            if action == CommandType.PICKUP:
-                key = self._action_to_key.get(action)
-                return self._tap_direct(key)
 
             logger.warning(f"不支持的指令类型: {action}")
             return False
@@ -606,9 +616,20 @@ class InputDriver(BaseInputDriver):
             logger.debug(f"[InputDriver.tap] 技能栏: {normalized}")
             return self.execute(command)
 
-        # 映射到 ATTACK 动作（x/z/c 等按键）
+        # x/z/c 分别映射为攻击/技能/跳跃，避免 z 被错误当作攻击。
+        key_action_map = {
+            "x": CommandType.ATTACK,
+            "z": CommandType.SKILL,
+            "c": CommandType.JUMP,
+        }
+        action_type = key_action_map.get(normalized)
+        if action_type is None:
+            logger.warning(f"[InputDriver.tap] 不支持的按键映射: {normalized}")
+            return False
+
         command = Command(
-            action_type=CommandType.ATTACK,
+            action_type=action_type,
+            key_code=normalized if action_type == CommandType.SKILL else None,
             duration=0,
             metadata={"raw_key": normalized}
         )
@@ -701,13 +722,19 @@ class InputDriver(BaseInputDriver):
             是否成功
         """
         with self._lock:
-            for key in list(self._pressed_keys):
-                try:
-                    self._backend.key_up(key)
-                finally:
-                    self._pressed_keys.discard(key)
+            self._release_all_pressed_unlocked()
             self.is_running = False
             logger.warning("触发 stop_all，已释放所有按键并停止输入驱动")
+        return True
+
+    def _release_all_pressed(self) -> bool:
+        """
+        释放当前所有已按下按键，但不改变驱动运行状态。
+
+        用于普通 STOP 指令，避免把紧急停止语义误用于状态机待机场景。
+        """
+        with self._lock:
+            self._release_all_pressed_unlocked()
         return True
 
     def emergency_stop(self) -> bool:
@@ -819,6 +846,16 @@ class InputDriver(BaseInputDriver):
         except Exception as exc:
             raise InputError(f"弹起按键失败: {key}") from exc
         self._pressed_keys.discard(key)
+
+    def _release_all_pressed_unlocked(self) -> None:
+        """
+        在已持锁状态下释放全部按键。
+        """
+        for key in list(self._pressed_keys):
+            try:
+                self._backend.key_up(key)
+            finally:
+                self._pressed_keys.discard(key)
 
     def _resolve_tap_duration(self) -> float:
         """

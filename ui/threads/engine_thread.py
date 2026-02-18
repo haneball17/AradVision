@@ -8,12 +8,13 @@ Date: 2026-02-11
 """
 
 import time
-from typing import Optional
+from typing import Any, Optional
 
-from PyQt5.QtCore import QThread, pyqtSignal, QObject, Qt
+from PyQt5.QtCore import QThread
 
 from core.logger import logger
 from core.config import ConfigLoader
+from ui.threads.signals import EngineSignals
 
 # 导入核心模块
 try:
@@ -22,29 +23,16 @@ try:
     from logic.world_model import WorldModel
     from logic.bot_fsm import BotFSM
     from input.mock_driver import MockInputDriver
+    from input.base_driver import BaseInputDriver
 except ImportError as e:
     logger.warning(f"核心模块导入失败: {e}")
     logger.warning("将使用 Mock 模式")
 
-
-class EngineSignals(QObject):
-    """
-    引擎信号定义
-
-    定义引擎与 UI 之间的通信信号。
-    """
-
-    # 每秒 30 帧的帧数据信号（用于视频预览）
-    frame_ready = pyqtSignal(object)
-
-    # 每秒 5 次的状态更新信号（用于状态面板）
-    status_update = pyqtSignal(dict)
-
-    # 日志消息信号（用于日志面板）
-    log_message = pyqtSignal(str, str)
-
-    # 错误发生信号
-    error_occurred = pyqtSignal(str)
+try:
+    from input.input_driver import InputDriver
+    HAS_REAL_INPUT = True
+except Exception:
+    HAS_REAL_INPUT = False
 
 
 class EngineThread(QThread):
@@ -72,8 +60,9 @@ class EngineThread(QThread):
 
         # 配置
         if config is None:
-            config_loader = ConfigLoader()
-            self.config = config_loader.get_config()
+            config_loader = ConfigLoader.instance()
+            config_loader.load("configs/config.yaml")
+            self.config = config_loader.config
         else:
             self.config = config
 
@@ -139,19 +128,14 @@ class EngineThread(QThread):
         logger.info("引擎线程开始运行")
 
         try:
-            # 初始化核心引擎（从配置读取是否使用 Mock）
-            config_use_mock = False
-            if hasattr(self.config, 'capture') and hasattr(self.config.capture, 'use_mock'):
-                config_use_mock = self.config.capture.use_mock
-            elif isinstance(self.config, dict):
-                config_use_mock = self.config.get("capture", {}).get("use_mock", False)
-
+            # 初始化核心引擎（按配置注入，缺失时回退默认值）
+            config_use_mock = bool(self._get_config_value("capture", "use_mock", False))
             capture_engine = create_capture_engine(use_mock=config_use_mock)
             capture_engine.start()  # 启动捕获引擎
-            detector = MockYoloDetector(mock_mode="random")
+            detector = self._create_detector()
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
             fsm = BotFSM()
-            input_driver = MockInputDriver()
+            input_driver = self._create_input_driver()
 
             logger.info("所有核心模块初始化完成")
 
@@ -164,16 +148,14 @@ class EngineThread(QThread):
             self._frame_count = 0
 
             # 获取配置
-            # 支持 AppConfig 对象或字典
-            if hasattr(self.config, 'capture'):
-                target_fps = self.config.capture.target_fps
-            else:
-                target_fps = self.config.get("capture", {}).get("target_fps", 30)
+            target_fps = max(1, int(self._get_config_value("capture", "target_fps", 30)))
             frame_time = 1.0 / target_fps
 
             # 主循环
             while self._running and not self._should_stop:
                 try:
+                    loop_start = time.perf_counter()
+
                     # 暂停检查
                     if self._paused:
                         time.sleep(0.1)
@@ -213,7 +195,7 @@ class EngineThread(QThread):
                     self._frame_count += 1
 
                     # 帧率控制
-                    elapsed = time.time() - self._loop_start_time(self._frame_count, frame_time)
+                    elapsed = time.perf_counter() - loop_start
                     if elapsed < frame_time:
                         time.sleep(frame_time - elapsed)
 
@@ -233,9 +215,71 @@ class EngineThread(QThread):
             logger.info(f"引擎线程结束，共处理 {self._frame_count} 帧")
             self._running = False
 
-    def _loop_start_time(self, frame_count: int, frame_time: float) -> float:
-        """计算循环开始时间（用于 FPS 计算）"""
-        return time.time() - (frame_time * (frame_count - 1))
+    def _get_config_value(self, section: str, key: str, default: Any) -> Any:
+        """
+        读取配置值，兼容 AppConfig 与 dict 两种格式。
+        """
+        if isinstance(self.config, dict):
+            return self.config.get(section, {}).get(key, default)
+
+        section_obj = getattr(self.config, section, None)
+        if section_obj is None:
+            return default
+        return getattr(section_obj, key, default)
+
+    def _create_detector(self):
+        """
+        根据配置创建检测器。
+        """
+        detector_type = str(self._get_config_value("detector", "type", "mock")).lower()
+        if detector_type != "mock":
+            logger.warning(
+                f"UI 线程暂未接入 '{detector_type}' 检测器实现，回退到 Mock 检测器"
+            )
+        return MockYoloDetector(mock_mode="random")
+
+    def _create_input_driver(self) -> "BaseInputDriver":
+        """
+        根据配置创建输入驱动，不可用时回退 Mock。
+        """
+        input_type = str(self._get_config_value("input", "type", "mock")).lower()
+        if input_type != "real":
+            return MockInputDriver()
+
+        if not HAS_REAL_INPUT:
+            logger.warning("UI 线程真实输入驱动依赖不可用，回退到 Mock 输入驱动")
+            return MockInputDriver()
+
+        input_section = self.config.get("input", {}) if isinstance(self.config, dict) else self.config.input
+        capture_section = self.config.get("capture", {}) if isinstance(self.config, dict) else self.config.capture
+
+        key_bindings = {}
+        if isinstance(self.config, dict):
+            key_bindings = input_section.get("key_bindings", {})
+            check_focus = input_section.get("window", {}).get("check_focus", True)
+            auto_activate = input_section.get("window", {}).get("auto_activate", False)
+            randomization = input_section.get("randomization", True)
+            delay_min = max(float(input_section.get("delay_min", 0.05)), 0.01)
+            delay_max = max(float(input_section.get("delay_max", delay_min)), delay_min)
+            window_title = capture_section.get("window_title", "地下城与勇士")
+        else:
+            key_bindings = dict(getattr(input_section.key_bindings, "__dict__", {}))
+            check_focus = input_section.check_focus
+            auto_activate = input_section.auto_activate
+            randomization = input_section.randomization
+            delay_min = max(float(input_section.delay_min), 0.01)
+            delay_max = max(float(input_section.delay_max), delay_min)
+            window_title = capture_section.window_title
+
+        return InputDriver(
+            enable_jitter=randomization,
+            jitter_mean=delay_min,
+            jitter_std=max((delay_max - delay_min) / 2.0, 0.0),
+            key_bindings=key_bindings,
+            window_title=window_title,
+            check_focus=check_focus,
+            auto_activate=auto_activate,
+        )
 
     def _collect_status(self, context, fps: float) -> dict:
         """
