@@ -159,17 +159,20 @@ class AradVisionApp:
             config_use_mock = getattr(config.capture, "use_mock", True)
             use_mock = config_use_mock if self.use_mock is None else self.use_mock
             requested_backend = getattr(config.capture, "backend", "auto")
+            allow_fallback = bool(getattr(config.capture, "allow_fallback", True))
             self._capture_engine = create_capture_engine(
                 config=config.capture,
                 use_mock=use_mock,
                 backend=requested_backend,
+                allow_fallback=allow_fallback,
             )
             self._capture_engine.start()
             engine_type = "Mock" if use_mock else "真实"
             active_backend = getattr(self._capture_engine, "active_backend", "unknown")
             logger.info(
                 f"✓ {engine_type} 截图引擎启动成功 "
-                f"(requested_backend={requested_backend}, active_backend={active_backend})"
+                f"(requested_backend={requested_backend}, active_backend={active_backend}, "
+                f"allow_fallback={allow_fallback})"
             )
 
             # 2. 初始化检测器（按配置注入）

@@ -135,12 +135,14 @@ class EngineThread(QThread):
                 config=capture_config,
                 use_mock=config_use_mock,
                 backend=capture_config.backend,
+                allow_fallback=bool(getattr(capture_config, "allow_fallback", True)),
             )
             capture_engine.start()  # 启动捕获引擎
             logger.info(
                 "UI 线程捕获引擎启动: "
                 f"requested_backend={capture_config.backend}, "
-                f"active_backend={getattr(capture_engine, 'active_backend', 'unknown')}"
+                f"active_backend={getattr(capture_engine, 'active_backend', 'unknown')}, "
+                f"allow_fallback={getattr(capture_config, 'allow_fallback', True)}"
             )
             detector = self._create_detector()
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
@@ -252,6 +254,7 @@ class EngineThread(QThread):
                 monitor_index=int(capture.get("monitor_index", 1)),
                 use_mock=bool(capture.get("use_mock", False)),
                 backend=str(capture.get("backend", "auto")),
+                allow_fallback=bool(capture.get("allow_fallback", True)),
                 wgc_show_cursor=bool(capture.get("wgc_show_cursor", False)),
                 wgc_force_borderless=bool(capture.get("wgc_force_borderless", False)),
             )

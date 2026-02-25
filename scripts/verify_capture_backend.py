@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frames", type=int, default=30, help="采样帧数")
     parser.add_argument("--interval", type=float, default=0.05, help="采样间隔（秒）")
     parser.add_argument("--output-dir", default="logs/capture_verify", help="输出目录")
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="禁用后端降级（例如 WGC 失败后不自动切 MSS）",
+    )
     parser.add_argument("--use-mock", action="store_true", help="使用 Mock 捕获")
     return parser.parse_args()
 
@@ -44,6 +49,8 @@ def main() -> int:
     capture_cfg = cfg.capture
     if args.backend is not None:
         capture_cfg.backend = args.backend
+    if args.no_fallback:
+        capture_cfg.allow_fallback = False
     if args.window_title:
         capture_cfg.window_title = args.window_title
 
@@ -53,6 +60,7 @@ def main() -> int:
     logger.info(
         "开始验证捕获后端: "
         f"requested_backend={capture_cfg.backend}, "
+        f"allow_fallback={capture_cfg.allow_fallback}, "
         f"window_title={capture_cfg.window_title}, frames={args.frames}"
     )
 
@@ -60,6 +68,7 @@ def main() -> int:
         config=capture_cfg,
         use_mock=args.use_mock or capture_cfg.use_mock,
         backend=capture_cfg.backend,
+        allow_fallback=capture_cfg.allow_fallback,
     )
 
     saved = 0

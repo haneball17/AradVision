@@ -48,6 +48,10 @@ capture:
   # mss  = 强制使用 MSS 屏幕区域捕获
   backend: auto
 
+  # 捕获后端失败时是否允许降级（true: 例如 wgc 自动降级到 mss）
+  # 调试 WGC 问题时建议设为 false，避免静默降级
+  allow_fallback: false
+
   # WGC 选项：是否捕获鼠标光标
   wgc_show_cursor: false
 

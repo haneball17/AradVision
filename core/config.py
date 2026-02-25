@@ -46,6 +46,7 @@ class CaptureConfig:
     monitor_index: int = 1
     use_mock: bool = False  # 是否使用 Mock 捕获引擎
     backend: str = "auto"  # auto, wgc, mss
+    allow_fallback: bool = True  # 后端失败时是否允许降级（如 wgc -> mss）
     wgc_show_cursor: bool = False  # WGC 是否包含鼠标光标
     wgc_force_borderless: bool = False  # WGC 是否关闭捕获边框
 
@@ -242,6 +243,7 @@ class ConfigLoader:
                 monitor_index=capture_data.get('monitor_index', 1),
                 use_mock=capture_data.get('use_mock', False),
                 backend=capture_data.get('backend', 'auto'),
+                allow_fallback=capture_data.get('allow_fallback', True),
                 wgc_show_cursor=capture_data.get('wgc_show_cursor', False),
                 wgc_force_borderless=capture_data.get('wgc_force_borderless', False),
             )
@@ -366,6 +368,7 @@ class ConfigLoader:
                 'monitor_index': 1,
                 'use_mock': False,
                 'backend': 'auto',
+                'allow_fallback': True,
                 'wgc_show_cursor': False,
                 'wgc_force_borderless': False,
             },
