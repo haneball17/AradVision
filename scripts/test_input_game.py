@@ -28,11 +28,20 @@ from input.input_driver import InputDriver
 class GameInputTester:
     """游戏输入测试器"""
 
-    def __init__(self):
+    def __init__(self, auto_mode: bool = False):
+        """
+        初始化测试器
+
+        Args:
+            auto_mode: 是否启用自动模式（跳过所有输入确认）
+        """
+        self.auto_mode = auto_mode
+
         # 设置日志级别为 DEBUG，以便查看详细的窗口焦点日志
         setup_logger("DEBUG")
         logger.info("=" * 60)
         logger.info("游戏输入测试器初始化")
+        logger.info(f"运行模式: {'自动模式' if auto_mode else '交互模式'}")
         logger.info("=" * 60)
 
         # 加载配置文件
@@ -93,6 +102,20 @@ class GameInputTester:
         logger.info(f"    左: {self.keys.move_left}")
         logger.info(f"    右: {self.keys.move_right}")
 
+    def _wait_for_confirm(self, prompt: str = "\n按回车开始测试...") -> None:
+        """
+        等待用户确认（仅在交互模式下）
+
+        Args:
+            prompt: 提示信息
+        """
+        if self.auto_mode:
+            logger.debug(f"[自动模式] 跳过确认: {prompt.strip()}")
+            # 自动模式下稍微等待，让用户有时间观察
+            time.sleep(0.5)
+            return
+        input(prompt)
+
     def test_basic_keys(self):
         """测试基础按键（使用配置文件中的按键映射）"""
         print("\n=== 基础按键测试 ===")
@@ -103,7 +126,7 @@ class GameInputTester:
         print(f"  4. 技能栏 1-5 ({self.keys.skill_1} - {self.keys.skill_5})")
         print("  5. Esc 键 (取消/逃跑)")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         # 测试攻击键
         print(f"\n[测试] 攻击键 ({self.keys.attack})")
@@ -149,7 +172,7 @@ class GameInputTester:
         print("将测试角色移动，请确保角色在开阔位置")
         print(f"当前方向键配置: 上={self.keys.move_up}, 下={self.keys.move_down}, 左={self.keys.move_left}, 右={self.keys.move_right}")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         directions = [
             (self.keys.move_up, "向上"),
@@ -172,7 +195,7 @@ class GameInputTester:
         print("角色将执行：上 -> 右 -> 下 -> 左")
         print(f"当前方向键配置: 上={self.keys.move_up}, 右={self.keys.move_right}, 下={self.keys.move_down}, 左={self.keys.move_left}")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         # 定义一个移动路径（使用配置的按键）
         sequence = [
@@ -194,7 +217,7 @@ class GameInputTester:
         print("\n=== 技能连招测试 ===")
         print(f"将测试：技能({self.keys.skill}) -> 技能栏1-3 的技能序列")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         skills = [
             (self.keys.skill, "通用技能"),
@@ -215,7 +238,7 @@ class GameInputTester:
         print("\n=== 紧急停止测试 ===")
         print(f"将持续按住攻击键({self.keys.attack})，然后触发 stop_all")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         print(f"[测试] 持续按住攻击键({self.keys.attack})...")
         print("[提示] 观察游戏中角色是否持续攻击")
@@ -237,7 +260,7 @@ class GameInputTester:
         print("\n=== 随机输入测试 ===")
         print("将随机执行按键和移动，持续 5 秒")
 
-        input("\n按回车开始测试...")
+        self._wait_for_confirm("\n按回车开始测试...")
 
         import random
 
@@ -269,30 +292,40 @@ class GameInputTester:
         """运行所有测试"""
         print("=" * 50)
         print("AradVision 游戏控制测试")
+        if self.auto_mode:
+            print("[自动模式] 将依次执行所有测试，无需手动确认")
         print("=" * 50)
 
         try:
             self.test_basic_keys()
 
-            cont = input("\n是否继续测试方向键? (y/N): ")
-            if cont.lower() == 'y':
+            # 自动模式下直接运行所有测试，交互模式下需要确认
+            if self.auto_mode:
                 self.test_direction_keys()
-
-            cont = input("\n是否继续测试移动序列? (y/N): ")
-            if cont.lower() == 'y':
                 self.test_movement_sequence()
-
-            cont = input("\n是否继续测试技能连招? (y/N): ")
-            if cont.lower() == 'y':
                 self.test_skill_combo()
-
-            cont = input("\n是否继续测试紧急停止? (y/N): ")
-            if cont.lower() == 'y':
                 self.test_stop_all()
-
-            cont = input("\n是否继续测试随机输入? (y/N): ")
-            if cont.lower() == 'y':
                 self.test_random_input()
+            else:
+                cont = input("\n是否继续测试方向键? (y/N): ")
+                if cont.lower() == 'y':
+                    self.test_direction_keys()
+
+                cont = input("\n是否继续测试移动序列? (y/N): ")
+                if cont.lower() == 'y':
+                    self.test_movement_sequence()
+
+                cont = input("\n是否继续测试技能连招? (y/N): ")
+                if cont.lower() == 'y':
+                    self.test_skill_combo()
+
+                cont = input("\n是否继续测试紧急停止? (y/N): ")
+                if cont.lower() == 'y':
+                    self.test_stop_all()
+
+                cont = input("\n是否继续测试随机输入? (y/N): ")
+                if cont.lower() == 'y':
+                    self.test_random_input()
 
             print("\n" + "=" * 50)
             print("所有测试完成!")
@@ -323,10 +356,18 @@ def main():
         action="store_true",
         help="禁用随机延迟"
     )
+    parser.add_argument(
+        "--mode",
+        choices=["interactive", "auto"],
+        default="interactive",
+        help="运行模式: interactive（交互式，需要确认）或 auto（自动模式，无需确认）"
+    )
 
     args = parser.parse_args()
 
-    tester = GameInputTester()
+    # 根据参数决定是否启用自动模式
+    auto_mode = (args.mode == "auto")
+    tester = GameInputTester(auto_mode=auto_mode)
 
     if args.test == "basic":
         tester.test_basic_keys()
