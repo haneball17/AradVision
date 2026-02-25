@@ -9,10 +9,10 @@ UI 模块 - PyQt5 控制面板
 
 Author: haneball17
 Date: 2026-02-11
-Version: 0.1.3
+Version: 0.1.4
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 
 from ui.widgets import (
@@ -21,8 +21,15 @@ from ui.widgets import (
     ParameterPanel,
     SkillListWidget,
     LogPanel,
-    LogHandler
+    LogHandler,
+    WorkspaceSwitchBar,
+    CaptureControlBar,
+    TimelinePanel,
+    FrameStrip,
+    ExportPanel,
+    PseudoLabelPanel,
 )
 
 from ui.threads.signals import EngineSignals
 from ui.config.manager import UIManager
+from ui.timeline_window import TimelineWorkbenchWindow

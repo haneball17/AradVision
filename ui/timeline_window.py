@@ -1,0 +1,504 @@
+"""
+时间线工作台主窗口
+
+提供单 UI 双工作区：
+1. 采集工作区（时间线浏览、区间导出）
+2. 预标注工作区（任务入口与状态展示）
+"""
+
+from __future__ import annotations
+
+import platform
+import uuid
+from dataclasses import replace
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QStackedWidget,
+    QSplitter,
+    QPlainTextEdit,
+    QLabel,
+)
+
+from core.capture import create_capture_engine
+from core.config import AppConfig, ConfigLoader
+from core.logger import logger
+from ui.widgets.capture_control_bar import CaptureControlBar
+from ui.widgets.export_panel import ExportPanel
+from ui.widgets.frame_strip import FrameStrip
+from ui.widgets.pseudo_label_panel import PseudoLabelPanel
+from ui.widgets.timeline_panel import TimelinePanel
+from ui.widgets.workspace_switch_bar import WorkspaceSwitchBar
+
+
+class TimelineWorkbenchWindow(QMainWindow):
+    """时间线工作台主窗口。"""
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("AradVision 数据采集与预标注工作台")
+        self.setMinimumSize(1200, 800)
+        self.resize(1400, 900)
+
+        self._samples: List[Dict[str, object]] = []
+        self._current_task_id: str = ""
+        self._task_processed = 0
+        self._task_total = 1000
+        self._config: AppConfig = AppConfig()
+
+        self._capture_engine: Optional[Any] = None
+        self._capture_frame_count = 0
+        self._capture_error_streak = 0
+        self._capture_timer_interval_ms = 33
+
+        self._task_timer = QTimer(self)
+        self._task_timer.timeout.connect(self._tick_pseudo_task)
+        self._capture_timer = QTimer(self)
+        self._capture_timer.timeout.connect(self._tick_capture_frame)
+
+        self.workspace_switch_bar: WorkspaceSwitchBar
+        self.capture_control_bar: CaptureControlBar
+        self.workspace_stack: QStackedWidget
+
+        self.session_list: QListWidget
+        self.timeline_panel: TimelinePanel
+        self.frame_strip: FrameStrip
+        self.export_panel: ExportPanel
+        self.pseudo_label_panel: PseudoLabelPanel
+
+        self.log_text: QPlainTextEdit
+
+        self._init_ui()
+        self._load_runtime_config()
+        self._connect_signals()
+        self._load_demo_data()
+        self._refresh_window_candidates()
+        self.apply_theme("dark")
+
+        logger.info("时间线工作台窗口初始化完成")
+
+    def _init_ui(self) -> None:
+        """初始化主界面结构。"""
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        root_layout = QVBoxLayout(central)
+
+        self.workspace_switch_bar = WorkspaceSwitchBar()
+        root_layout.addWidget(self.workspace_switch_bar)
+
+        self.capture_control_bar = CaptureControlBar()
+        root_layout.addWidget(self.capture_control_bar)
+
+        self.workspace_stack = QStackedWidget()
+        root_layout.addWidget(self.workspace_stack, stretch=1)
+
+        self.workspace_stack.addWidget(self._build_capture_workspace())
+        self.workspace_stack.addWidget(self._build_pseudo_workspace())
+
+        self.log_text = QPlainTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumBlockCount(1000)
+        self.log_text.setFixedHeight(150)
+        root_layout.addWidget(QLabel("系统日志"))
+        root_layout.addWidget(self.log_text)
+
+    def _load_runtime_config(self) -> None:
+        """加载运行时配置。"""
+        loader = ConfigLoader.instance()
+        try:
+            self._config = loader.load("configs/config.yaml")
+            self._append_log(
+                "配置加载成功: "
+                f"backend={self._config.capture.backend}, "
+                f"window_title={self._config.capture.window_title}"
+            )
+        except Exception as exc:
+            self._config = AppConfig()
+            self._append_log(f"配置加载失败，已回退默认配置: {exc}")
+
+    def _build_capture_workspace(self) -> QWidget:
+        """构建采集工作区布局。"""
+        workspace = QWidget()
+        layout = QHBoxLayout(workspace)
+
+        splitter = QSplitter(Qt.Horizontal)
+        layout.addWidget(splitter)
+
+        self.session_list = QListWidget()
+        self.session_list.setMinimumWidth(220)
+        splitter.addWidget(self.session_list)
+
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        self.timeline_panel = TimelinePanel()
+        self.frame_strip = FrameStrip()
+        center_layout.addWidget(self.timeline_panel, stretch=2)
+        center_layout.addWidget(self.frame_strip, stretch=1)
+        splitter.addWidget(center_widget)
+
+        self.export_panel = ExportPanel()
+        self.export_panel.setMinimumWidth(320)
+        splitter.addWidget(self.export_panel)
+
+        splitter.setSizes([220, 760, 320])
+        return workspace
+
+    def _build_pseudo_workspace(self) -> QWidget:
+        """构建预标注工作区布局。"""
+        workspace = QWidget()
+        layout = QVBoxLayout(workspace)
+        self.pseudo_label_panel = PseudoLabelPanel()
+        layout.addWidget(self.pseudo_label_panel)
+        return workspace
+
+    def _connect_signals(self) -> None:
+        """连接界面交互信号。"""
+        self.workspace_switch_bar.workspace_changed.connect(self._on_workspace_changed)
+
+        self.capture_control_bar.start_requested.connect(self._on_capture_start)
+        self.capture_control_bar.stop_requested.connect(self._on_capture_stop)
+        self.capture_control_bar.pause_toggled.connect(self._on_capture_pause_toggled)
+        self.capture_control_bar.refresh_windows_requested.connect(
+            self._on_refresh_windows_requested
+        )
+
+        self.timeline_panel.range_changed.connect(self._on_range_changed)
+        self.timeline_panel.sample_activated.connect(self._on_sample_activated)
+        self.frame_strip.frame_selected.connect(self._on_frame_selected)
+
+        self.export_panel.export_requested.connect(self._on_export_requested)
+
+        self.pseudo_label_panel.start_task_requested.connect(self._on_start_pseudo_task)
+        self.pseudo_label_panel.stop_task_requested.connect(self._on_stop_pseudo_task)
+
+        self.session_list.itemClicked.connect(self._on_session_selected)
+
+    def _load_demo_data(self) -> None:
+        """加载演示数据，确保窗口启动后可直接交互。"""
+        self.session_list.addItem(QListWidgetItem("day1_luolan"))
+        self.session_list.addItem(QListWidgetItem("day2_forest"))
+
+        base_time = datetime(2026, 2, 25, 14, 0, 0)
+        scenes = ["combat", "navigate", "loot", "boss", "other"]
+
+        self._samples = []
+        for idx in range(240):
+            ts = base_time + timedelta(seconds=idx)
+            scene = scenes[idx % len(scenes)]
+            self._samples.append(
+                {
+                    "sample_id": f"sample_{idx:06d}",
+                    "timestamp_iso": ts.isoformat() + "Z",
+                    "scene": scene,
+                    "image_rel_path": f"images/{scene}_{idx:06d}.jpg",
+                }
+            )
+
+        self.timeline_panel.set_samples(self._samples)
+        self.frame_strip.set_frames([str(item["image_rel_path"]) for item in self._samples])
+        self.export_panel.set_range(len(self._samples) - 1, 0, len(self._samples) - 1)
+        self._append_log("已加载演示会话与样本数据。")
+
+    def _list_window_titles(self) -> List[str]:
+        """枚举可选窗口标题。"""
+        candidates: List[str] = []
+        default_title = self._config.capture.window_title.strip()
+        if default_title:
+            candidates.append(default_title)
+
+        if platform.system().lower() != "windows":
+            return candidates
+
+        try:
+            import win32gui  # type: ignore
+        except Exception as exc:  # pragma: no cover - Linux 环境不会安装该依赖
+            self._append_log(f"窗口枚举不可用（缺少 win32gui）: {exc}")
+            return candidates
+
+        def enum_windows_callback(hwnd: int, _param: object) -> bool:
+            if not win32gui.IsWindowVisible(hwnd):
+                return True
+            title = win32gui.GetWindowText(hwnd).strip()
+            if not title:
+                return True
+            if title not in candidates:
+                candidates.append(title)
+            return True
+
+        try:
+            win32gui.EnumWindows(enum_windows_callback, None)
+        except Exception as exc:
+            self._append_log(f"窗口枚举失败: {exc}")
+
+        return candidates
+
+    def _refresh_window_candidates(self) -> None:
+        """刷新窗口下拉列表。"""
+        previous = self.capture_control_bar.selected_window_title()
+        titles = self._list_window_titles()
+        preferred = previous or self._config.capture.window_title
+        self.capture_control_bar.set_window_options(titles, preferred)
+        self._append_log(f"窗口列表已刷新，可选窗口数量: {len(titles)}")
+
+    def apply_theme(self, theme: str = "dark") -> None:
+        """应用 QSS 主题。"""
+        theme_path = Path(__file__).parent / "themes" / f"{theme}.qss"
+        if not theme_path.exists():
+            self._append_log(f"主题文件不存在: {theme_path}")
+            return
+
+        try:
+            self.setStyleSheet(theme_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self._append_log(f"主题加载失败: {exc}")
+
+    def _on_workspace_changed(self, workspace: str) -> None:
+        """切换工作区。"""
+        index = 0 if workspace == "capture" else 1
+        self.workspace_stack.setCurrentIndex(index)
+        self._append_log(f"切换工作区: {'采集工作区' if index == 0 else '预标注工作区'}")
+
+    def _on_refresh_windows_requested(self) -> None:
+        """响应“刷新窗口”动作。"""
+        self._refresh_window_candidates()
+
+    def _on_capture_start(self) -> None:
+        """响应采集开始。"""
+        if self._capture_engine is not None:
+            self._append_log("采集已在运行，无需重复启动。")
+            return
+
+        window_title = self.capture_control_bar.selected_window_title()
+        if not window_title or window_title.startswith("<"):
+            self.capture_control_bar.set_status("异常")
+            self._append_log("采集启动失败：请先选择有效窗口。")
+            return
+
+        capture_cfg = replace(self._config.capture)
+        capture_cfg.window_title = window_title
+
+        if self.capture_control_bar.pause_button.isChecked():
+            self.capture_control_bar.pause_button.blockSignals(True)
+            self.capture_control_bar.pause_button.setChecked(False)
+            self.capture_control_bar.pause_button.setText("暂停")
+            self.capture_control_bar.pause_button.blockSignals(False)
+
+        try:
+            engine = create_capture_engine(
+                config=capture_cfg,
+                use_mock=capture_cfg.use_mock,
+                backend=capture_cfg.backend,
+                allow_fallback=capture_cfg.allow_fallback,
+            )
+            engine.start()
+
+            self._capture_engine = engine
+            self._capture_frame_count = 0
+            self._capture_error_streak = 0
+            fps = max(int(capture_cfg.target_fps), 1)
+            self._capture_timer_interval_ms = max(10, int(1000 / fps))
+            self._capture_timer.start(self._capture_timer_interval_ms)
+
+            active_backend = getattr(engine, "active_backend", "unknown")
+            self.capture_control_bar.set_status(f"采集中({active_backend})")
+            self._append_log(
+                "采集已启动: "
+                f"window='{window_title}', requested={capture_cfg.backend}, active={active_backend}"
+            )
+        except Exception as exc:
+            self.capture_control_bar.set_status("异常")
+            self._capture_engine = None
+            self._append_log(f"采集启动失败: {exc}")
+
+    def _on_capture_stop(self) -> None:
+        """响应采集停止。"""
+        self._capture_timer.stop()
+        if self._capture_engine is not None:
+            try:
+                self._capture_engine.stop()
+            except Exception as exc:
+                self._append_log(f"停止捕获引擎时出现异常: {exc}")
+            finally:
+                self._capture_engine = None
+
+        if self.capture_control_bar.pause_button.isChecked():
+            self.capture_control_bar.pause_button.blockSignals(True)
+            self.capture_control_bar.pause_button.setChecked(False)
+            self.capture_control_bar.pause_button.setText("暂停")
+            self.capture_control_bar.pause_button.blockSignals(False)
+
+        self.capture_control_bar.set_status("空闲")
+        self._append_log("采集已停止。")
+
+    def _on_capture_pause_toggled(self, paused: bool) -> None:
+        """响应采集暂停切换。"""
+        if self._capture_engine is None:
+            self.capture_control_bar.set_status("空闲")
+            self._append_log("当前无运行中的采集任务，忽略暂停/继续。")
+            return
+
+        if paused:
+            self._capture_timer.stop()
+            self.capture_control_bar.set_status("暂停中")
+            self._append_log("采集已暂停。")
+            return
+
+        self._capture_timer.start(self._capture_timer_interval_ms)
+        active_backend = getattr(self._capture_engine, "active_backend", "unknown")
+        self.capture_control_bar.set_status(f"采集中({active_backend})")
+        self._append_log("采集已继续。")
+
+    def _tick_capture_frame(self) -> None:
+        """拉取实时帧，形成真实数据流。"""
+        if self._capture_engine is None:
+            return
+
+        try:
+            frame = self._capture_engine.get_frame()
+            if frame is None:
+                raise RuntimeError("捕获引擎返回空帧")
+
+            self._capture_error_streak = 0
+            self._capture_frame_count += 1
+
+            if self._capture_frame_count % 30 == 0:
+                stats = self._capture_engine.get_stats()
+                shape = getattr(frame, "shape", None)
+                self._append_log(
+                    "采集中: "
+                    f"frames={stats.frame_count}, fps={stats.fps:.1f}, "
+                    f"latency={stats.avg_latency:.1f}ms, shape={shape}"
+                )
+        except Exception as exc:
+            self._capture_error_streak += 1
+            if self._capture_error_streak == 1 or self._capture_error_streak % 5 == 0:
+                self._append_log(
+                    f"实时取帧失败({self._capture_error_streak}): {exc}"
+                )
+
+            if self._capture_error_streak >= 10:
+                self._append_log("连续取帧失败过多，已自动停止采集。")
+                self._on_capture_stop()
+
+    def _on_range_changed(self, start_idx: int, end_idx: int) -> None:
+        """同步导出参数区间。"""
+        self.export_panel.set_range(len(self._samples) - 1, start_idx, end_idx)
+
+    def _on_sample_activated(self, sample: Dict[str, object]) -> None:
+        """双击样本后的日志反馈。"""
+        self._append_log(f"定位样本: {sample.get('image_rel_path', '-')}")
+
+    def _on_frame_selected(self, image_path: str) -> None:
+        """点击缩略图列表后的日志反馈。"""
+        self._append_log(f"选中帧: {image_path}")
+
+    def _on_export_requested(self, payload: Dict[str, object]) -> None:
+        """处理导出请求。"""
+        start_idx = int(payload.get("start_index", 0))
+        end_idx = int(payload.get("end_index", 0))
+        interval_sec = int(payload.get("interval_sec", 1))
+        output_dir = str(payload.get("output_dir", "assets/images/selected"))
+
+        self._append_log(
+            f"收到导出请求: 区间={start_idx}-{end_idx}, 频率={interval_sec}s, 输出={output_dir}"
+        )
+
+    def _on_start_pseudo_task(self, payload: Dict[str, object]) -> None:
+        """启动预标注任务（当前为 UI 演示用模拟流程）。"""
+        self._current_task_id = f"task_{uuid.uuid4().hex[:8]}"
+        self._task_processed = 0
+
+        task = {
+            "task_id": self._current_task_id,
+            "status": "running",
+            "progress": {"processed": 0, "total": self._task_total, "failed": 0},
+            "error_summary": "",
+        }
+        self.pseudo_label_panel.upsert_task(task)
+
+        self._append_log(
+            "预标注任务启动: "
+            f"task_id={self._current_task_id}, "
+            f"dataset={payload.get('dataset_path', '')}, "
+            f"model={payload.get('model_path', '')}, "
+            f"version={payload.get('pseudo_version', 'v1.0')}"
+        )
+        self._task_timer.start(200)
+
+    def _on_stop_pseudo_task(self, task_id: str) -> None:
+        """停止预标注任务。"""
+        target_id = task_id or self._current_task_id
+        if not target_id:
+            self._append_log("停止预标注任务失败：未选择任务。")
+            return
+
+        self._task_timer.stop()
+        self.pseudo_label_panel.upsert_task(
+            {
+                "task_id": target_id,
+                "status": "stopped",
+                "progress": {
+                    "processed": self._task_processed,
+                    "total": self._task_total,
+                    "failed": 0,
+                },
+                "error_summary": "手动停止",
+            }
+        )
+        self._append_log(f"预标注任务已停止: {target_id}")
+
+    def _tick_pseudo_task(self) -> None:
+        """模拟预标注任务进度推进。"""
+        self._task_processed += 25
+
+        if self._task_processed >= self._task_total:
+            self._task_processed = self._task_total
+            self._task_timer.stop()
+            self.pseudo_label_panel.upsert_task(
+                {
+                    "task_id": self._current_task_id,
+                    "status": "success",
+                    "progress": {
+                        "processed": self._task_processed,
+                        "total": self._task_total,
+                        "failed": 0,
+                    },
+                    "error_summary": "",
+                }
+            )
+            self._append_log(f"预标注任务完成: {self._current_task_id}")
+            return
+
+        self.pseudo_label_panel.upsert_task(
+            {
+                "task_id": self._current_task_id,
+                "status": "running",
+                "progress": {
+                    "processed": self._task_processed,
+                    "total": self._task_total,
+                    "failed": 0,
+                },
+                "error_summary": "",
+            }
+        )
+
+    def _on_session_selected(self, item: QListWidgetItem) -> None:
+        """切换会话时记录日志。"""
+        self._append_log(f"会话切换: {item.text()}")
+
+    def _append_log(self, message: str) -> None:
+        """统一写入界面日志与系统日志。"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.appendPlainText(f"[{timestamp}] {message}")
+        logger.info(f"[TimelineWorkbench] {message}")
