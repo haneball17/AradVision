@@ -52,12 +52,20 @@ class InputTester:
 
         # 创建紧急停止监听
         try:
-            self.kill_switch = KillSwitch(key="F12")
+            self.kill_switch = KillSwitch(
+                on_trigger=self._on_emergency_stop,
+                kill_key="F12",
+            )
             self.kill_switch.start()
             logger.info("✓ 紧急停止监听已启动（按 F12 停止）")
         except Exception as e:
             logger.warning(f"⚠️ 紧急停止启动失败: {e}")
             self.kill_switch = None
+
+    def _on_emergency_stop(self) -> None:
+        """紧急停止回调：释放所有按键并停止输入。"""
+        logger.warning("检测到 F12，执行紧急停止")
+        self.driver.stop_all()
 
     def cleanup(self):
         """清理资源"""
@@ -429,7 +437,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="AradVision 输入驱动实战测试工具"
+        description="AradVision 输入驱动实战测试工具",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
