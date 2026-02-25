@@ -76,6 +76,29 @@ class TimelinePanel(QWidget):
         self.end_spin.setValue(max_index)
         self._emit_range()
 
+    def append_sample(self, sample: Dict[str, object]) -> None:
+        """增量追加单条样本。"""
+        self._samples.append(sample)
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+
+        timestamp = str(sample.get("timestamp_iso", "-"))
+        scene = str(sample.get("scene", "-"))
+        image_path = str(sample.get("image_rel_path", "-"))
+
+        self.table.setItem(row, 0, QTableWidgetItem(timestamp))
+        self.table.setItem(row, 1, QTableWidgetItem(scene))
+        self.table.setItem(row, 2, QTableWidgetItem(image_path))
+
+        max_index = max(len(self._samples) - 1, 0)
+        self.start_spin.setMaximum(max_index)
+        self.end_spin.setMaximum(max_index)
+
+        # 默认让终点跟随最新样本，便于实时观察。
+        self.end_spin.setValue(max_index)
+        if self.start_spin.value() > self.end_spin.value():
+            self.start_spin.setValue(self.end_spin.value())
+
     def _emit_range(self) -> None:
         """当 A/B 变化时，保证顺序并广播区间。"""
         start_idx = self.start_spin.value()

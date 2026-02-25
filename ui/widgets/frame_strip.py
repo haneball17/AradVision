@@ -31,6 +31,11 @@ class FrameStrip(QWidget):
         for path in image_rel_paths:
             self.list_widget.addItem(QListWidgetItem(path))
 
+    def append_frame(self, image_rel_path: str) -> None:
+        """增量追加单个帧路径。"""
+        self.list_widget.addItem(QListWidgetItem(image_rel_path))
+        self.list_widget.scrollToBottom()
+
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
         """向外通知当前选中帧。"""
         self.frame_selected.emit(item.text())

@@ -10,10 +10,21 @@ from __future__ import annotations
 
 import platform
 import uuid
+import json
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# 可选导入 cv2，用于落盘
+try:
+    import cv2  # type: ignore
+
+    HAS_CV2 = True
+except Exception:
+    cv2 = None  # type: ignore
+    HAS_CV2 = False
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -37,6 +48,7 @@ from ui.widgets.export_panel import ExportPanel
 from ui.widgets.frame_strip import FrameStrip
 from ui.widgets.pseudo_label_panel import PseudoLabelPanel
 from ui.widgets.timeline_panel import TimelinePanel
+from ui.widgets.video_preview import VideoPreviewWidget
 from ui.widgets.workspace_switch_bar import WorkspaceSwitchBar
 
 
@@ -60,6 +72,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_frame_count = 0
         self._capture_error_streak = 0
         self._capture_timer_interval_ms = 33
+        self._capture_save_interval_sec = 0.5
+        self._capture_last_save_time = 0.0
+        self._capture_saved_count = 0
+        self._capture_session_name = ""
+        self._capture_session_dir: Optional[Path] = None
+        self._capture_images_dir: Optional[Path] = None
+        self._capture_meta_file: Optional[Path] = None
+        self._using_demo_data = True
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._tick_pseudo_task)
@@ -73,6 +93,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
         self.frame_strip: FrameStrip
+        self.video_preview: VideoPreviewWidget
         self.export_panel: ExportPanel
         self.pseudo_label_panel: PseudoLabelPanel
 
@@ -141,8 +162,10 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         center_widget = QWidget()
         center_layout = QVBoxLayout(center_widget)
+        self.video_preview = VideoPreviewWidget()
         self.timeline_panel = TimelinePanel()
         self.frame_strip = FrameStrip()
+        center_layout.addWidget(self.video_preview, stretch=2)
         center_layout.addWidget(self.timeline_panel, stretch=2)
         center_layout.addWidget(self.frame_strip, stretch=1)
         splitter.addWidget(center_widget)
@@ -303,6 +326,8 @@ class TimelineWorkbenchWindow(QMainWindow):
             )
             engine.start()
 
+            self._prepare_capture_session(window_title)
+
             self._capture_engine = engine
             self._capture_frame_count = 0
             self._capture_error_streak = 0
@@ -316,6 +341,8 @@ class TimelineWorkbenchWindow(QMainWindow):
                 "采集已启动: "
                 f"window='{window_title}', requested={capture_cfg.backend}, active={active_backend}"
             )
+            if self._capture_session_dir is not None:
+                self._append_log(f"落盘会话目录: {self._capture_session_dir}")
         except Exception as exc:
             self.capture_control_bar.set_status("异常")
             self._capture_engine = None
@@ -340,6 +367,7 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self.capture_control_bar.set_status("空闲")
         self._append_log("采集已停止。")
+        self.video_preview.clear_frame()
 
     def _on_capture_pause_toggled(self, paused: bool) -> None:
         """响应采集暂停切换。"""
@@ -369,8 +397,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             if frame is None:
                 raise RuntimeError("捕获引擎返回空帧")
 
+            self.video_preview.update_frame(frame)
             self._capture_error_streak = 0
             self._capture_frame_count += 1
+
+            if self._should_save_frame():
+                self._save_capture_frame(frame)
 
             if self._capture_frame_count % 30 == 0:
                 stats = self._capture_engine.get_stats()
@@ -390,6 +422,93 @@ class TimelineWorkbenchWindow(QMainWindow):
             if self._capture_error_streak >= 10:
                 self._append_log("连续取帧失败过多，已自动停止采集。")
                 self._on_capture_stop()
+
+    def _prepare_capture_session(self, window_title: str) -> None:
+        """初始化本次采集会话目录与元数据文件。"""
+        session_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_window = "".join(ch if ch.isalnum() else "_" for ch in window_title)[:40].strip("_")
+        safe_window = safe_window or "window"
+        self._capture_session_name = f"ui_capture_{session_stamp}_{safe_window}"
+
+        self._capture_session_dir = Path("assets/images/raw") / self._capture_session_name
+        self._capture_images_dir = self._capture_session_dir / "images"
+        meta_dir = self._capture_session_dir / "meta"
+        self._capture_meta_file = meta_dir / "samples.jsonl"
+
+        self._capture_images_dir.mkdir(parents=True, exist_ok=True)
+        meta_dir.mkdir(parents=True, exist_ok=True)
+
+        self._capture_saved_count = 0
+        self._capture_last_save_time = 0.0
+
+        if self._capture_meta_file.exists():
+            self._capture_meta_file.unlink()
+
+    def _should_save_frame(self) -> bool:
+        """判断当前帧是否达到落盘时机。"""
+        now = time.perf_counter()
+        if self._capture_last_save_time == 0.0:
+            self._capture_last_save_time = now
+            return True
+
+        if now - self._capture_last_save_time >= self._capture_save_interval_sec:
+            self._capture_last_save_time = now
+            return True
+        return False
+
+    def _save_capture_frame(self, frame: Any) -> None:
+        """按固定间隔将采集帧落盘并写入样本元数据。"""
+        if self._capture_images_dir is None or self._capture_meta_file is None:
+            return
+        if not HAS_CV2:
+            if self._capture_saved_count == 0:
+                self._append_log("当前环境缺少 cv2，无法执行图片落盘。")
+            return
+
+        timestamp = datetime.utcnow()
+        timestamp_iso = timestamp.isoformat(timespec="milliseconds") + "Z"
+        timestamp_ms = int(timestamp.timestamp() * 1000)
+
+        filename = f"frame_{self._capture_saved_count:06d}.jpg"
+        image_path = self._capture_images_dir / filename
+        image_rel_path = f"images/{filename}"
+
+        ok = cv2.imwrite(str(image_path), frame)
+        if not ok:
+            raise RuntimeError(f"图片写入失败: {image_path}")
+
+        height = int(frame.shape[0]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
+        width = int(frame.shape[1]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
+
+        sample = {
+            "sample_id": f"{self._capture_session_name}_{self._capture_saved_count:06d}",
+            "timestamp_ms": timestamp_ms,
+            "timestamp_iso": timestamp_iso,
+            "image_rel_path": image_rel_path,
+            "scene": "other",
+            "backend": getattr(self._capture_engine, "active_backend", "unknown"),
+            "width": width,
+            "height": height,
+            "filtered": False,
+        }
+
+        with self._capture_meta_file.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(sample, ensure_ascii=False) + "\n")
+
+        self._capture_saved_count += 1
+
+        if self._using_demo_data:
+            self._using_demo_data = False
+            self._samples = []
+            self.timeline_panel.set_samples([])
+            self.frame_strip.set_frames([])
+            self.session_list.clear()
+            self.session_list.addItem(QListWidgetItem(self._capture_session_name))
+            self.session_list.setCurrentRow(0)
+
+        self._samples.append(sample)
+        self.timeline_panel.append_sample(sample)
+        self.frame_strip.append_frame(image_rel_path)
 
     def _on_range_changed(self, start_idx: int, end_idx: int) -> None:
         """同步导出参数区间。"""
