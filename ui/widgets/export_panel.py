@@ -81,6 +81,11 @@ class ExportPanel(QWidget):
         self.estimate_label.setObjectName("StatusPill")
         layout.addWidget(self.estimate_label)
 
+        self.validation_label = QLabel("导出前校验: 未执行")
+        self.validation_label.setObjectName("HintText")
+        self.validation_label.setWordWrap(True)
+        layout.addWidget(self.validation_label)
+
         self.export_button = QPushButton("开始导出")
         self.export_button.setObjectName("PrimaryButton")
         layout.addWidget(self.export_button)
@@ -106,6 +111,11 @@ class ExportPanel(QWidget):
     def set_estimated_count(self, count: int) -> None:
         """外部直接更新预计导出数量。"""
         self.estimate_label.setText(f"预计导出: {max(count, 0)}")
+
+    def set_validation_summary(self, summary: str, blocking: bool = False) -> None:
+        """更新导出前校验摘要。"""
+        prefix = "导出前校验（阻断）: " if blocking else "导出前校验: "
+        self.validation_label.setText(prefix + summary)
 
     def _on_interval_changed(self, value: str) -> None:
         """切换频率模式。"""

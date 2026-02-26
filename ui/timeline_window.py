@@ -1,9 +1,10 @@
 """
 时间线工作台主窗口
 
-提供单 UI 双工作区：
-1. 采集工作区（时间线浏览、区间导出）
-2. 预标注工作区（任务入口与状态展示）
+提供单 UI 三工作区：
+1. 采集工作区（窗口绑定、实时采集）
+2. 筛选工作区（网格主视图 + 时间线辅视图 + 导出）
+3. 预标注工作区（任务入口与状态展示）
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import hashlib
 import os
 import shutil
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,6 +45,7 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QLabel,
     QDockWidget,
+    QMessageBox,
 )
 from PyQt5.QtCore import QSettings
 
@@ -53,6 +55,7 @@ from core.logger import logger
 from ui.widgets.capture_control_bar import CaptureControlBar
 from ui.widgets.export_panel import ExportPanel
 from ui.widgets.frame_strip import FrameStrip
+from ui.widgets.sample_grid_panel import SampleGridPanel
 from ui.widgets.pseudo_label_panel import PseudoLabelPanel
 from ui.widgets.timeline_panel import TimelinePanel
 from ui.widgets.video_preview import VideoPreviewWidget
@@ -62,12 +65,12 @@ from ui.widgets.workspace_switch_bar import WorkspaceSwitchBar
 class TimelineWorkbenchWindow(QMainWindow):
     """时间线工作台主窗口。"""
 
-    UI_LAYOUT_VERSION = 2
+    UI_LAYOUT_VERSION = 3
 
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("AradVision 数据采集与预标注工作台")
+        self.setWindowTitle("AradVision 训练数据资产管理工作台")
         self.setMinimumSize(920, 620)
         self._init_window_size()
 
@@ -96,7 +99,6 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_active_backend: str = "unknown"
         self._capture_started_at: str = ""
         self._capture_stats: Dict[str, int] = {}
-        self._using_demo_data = True
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._tick_pseudo_task)
@@ -117,6 +119,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._pseudo_layout: QVBoxLayout
         self._capture_content_splitter: QSplitter
         self._center_vertical_splitter: QSplitter
+        self._timeline_aux_splitter: QSplitter
         self._session_dock: QDockWidget
         self._log_dock: QDockWidget
         self._responsive_mode: str = ""
@@ -125,6 +128,7 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
+        self.sample_grid_panel: SampleGridPanel
         self.frame_strip: FrameStrip
         self.video_preview: VideoPreviewWidget
         self.export_panel: ExportPanel
@@ -136,7 +140,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._restore_ui_state()
         self._load_runtime_config()
         self._connect_signals()
-        self._load_demo_data()
+        self._initialize_empty_workspace()
         self._refresh_window_candidates()
         self.apply_theme("light")
         self._apply_responsive_layout(self.width(), force=True)
@@ -399,7 +403,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         return workspace
 
     def _build_curation_workspace(self) -> QWidget:
-        """构建筛选工作区布局（时间线筛选 + 导出）。"""
+        """构建筛选工作区布局（网格主视图 + 时间线辅视图 + 导出）。"""
         workspace = QWidget()
         layout = QHBoxLayout(workspace)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -416,22 +420,44 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._center_layout = center_layout
         center_layout.setContentsMargins(16, 16, 16, 16)
         center_layout.setSpacing(12)
-        center_title = QLabel("时间线筛选与样本流")
+        center_title = QLabel("样本筛选工作台")
         center_title.setObjectName("SectionTitle")
         center_layout.addWidget(center_title)
 
+        self.sample_grid_panel = SampleGridPanel()
         self.timeline_panel = TimelinePanel()
         self.frame_strip = FrameStrip()
+
+        aux_container = QWidget()
+        aux_layout = QVBoxLayout(aux_container)
+        aux_layout.setContentsMargins(0, 0, 0, 0)
+        aux_layout.setSpacing(8)
+        aux_title = QLabel("时间线辅视图")
+        aux_title.setObjectName("SubSectionTitle")
+        aux_layout.addWidget(aux_title)
+
+        self._timeline_aux_splitter = QSplitter(Qt.Vertical)
+        self._timeline_aux_splitter.setHandleWidth(6)
+        self._timeline_aux_splitter.setChildrenCollapsible(False)
+        self._timeline_aux_splitter.addWidget(self.timeline_panel)
+        self._timeline_aux_splitter.addWidget(self.frame_strip)
+        self._timeline_aux_splitter.setCollapsible(0, False)
+        self._timeline_aux_splitter.setCollapsible(1, True)
+        self._timeline_aux_splitter.setStretchFactor(0, 4)
+        self._timeline_aux_splitter.setStretchFactor(1, 1)
+        self._timeline_aux_splitter.setSizes([220, 90])
+        aux_layout.addWidget(self._timeline_aux_splitter, stretch=1)
+
         self._center_vertical_splitter = QSplitter(Qt.Vertical)
         self._center_vertical_splitter.setHandleWidth(8)
         self._center_vertical_splitter.setChildrenCollapsible(False)
-        self._center_vertical_splitter.addWidget(self.timeline_panel)
-        self._center_vertical_splitter.addWidget(self.frame_strip)
+        self._center_vertical_splitter.addWidget(self.sample_grid_panel)
+        self._center_vertical_splitter.addWidget(aux_container)
         self._center_vertical_splitter.setCollapsible(0, False)
-        self._center_vertical_splitter.setCollapsible(1, True)
-        self._center_vertical_splitter.setStretchFactor(0, 5)
+        self._center_vertical_splitter.setCollapsible(1, False)
+        self._center_vertical_splitter.setStretchFactor(0, 3)
         self._center_vertical_splitter.setStretchFactor(1, 2)
-        self._center_vertical_splitter.setSizes([420, 160])
+        self._center_vertical_splitter.setSizes([360, 220])
         center_layout.addWidget(self._center_vertical_splitter, stretch=1)
         self._capture_content_splitter.addWidget(center_panel)
 
@@ -565,38 +591,52 @@ class TimelineWorkbenchWindow(QMainWindow):
 
     def _rebalance_center_splitter(self, mode: str, scale: float) -> None:
         """按模式和缩放系数重算筛选区纵向布局，避免高缩放下时间线与样本流重叠。"""
+        grid_min = max(180, int(260 / scale))
         timeline_min = max(120, int(200 / scale))
         strip_min = max(64, int(110 / scale))
 
         if mode == "default":
+            grid_min = max(grid_min, 240)
             timeline_min = max(timeline_min, 200)
             self.frame_strip.setMaximumHeight(220)
         elif mode == "compact":
+            grid_min = max(grid_min, 210)
             timeline_min = max(timeline_min, 170)
             self.frame_strip.setMaximumHeight(170)
         else:
+            grid_min = max(grid_min, 180)
             timeline_min = max(timeline_min, 150)
             self.frame_strip.setMaximumHeight(0)
 
         frame_strip_visible = not self.frame_strip.isHidden()
+        self.sample_grid_panel.setMinimumHeight(grid_min)
         self.timeline_panel.setMinimumHeight(timeline_min)
         self.frame_strip.setMinimumHeight(strip_min if frame_strip_visible else 0)
 
-        available_height = self._center_vertical_splitter.size().height()
-        if available_height <= 0:
-            available_height = timeline_min + (strip_min if frame_strip_visible else 0) + 80
-
+        aux_available = self._timeline_aux_splitter.size().height()
+        if aux_available <= 0:
+            aux_available = timeline_min + (strip_min if frame_strip_visible else 0) + 80
         if not frame_strip_visible:
-            self._center_vertical_splitter.setSizes([max(available_height, timeline_min), 0])
-            return
+            self._timeline_aux_splitter.setSizes([max(aux_available, timeline_min), 0])
+        else:
+            timeline_h = max(timeline_min, int(aux_available * 0.74))
+            strip_h = aux_available - timeline_h
+            if strip_h < strip_min:
+                strip_h = strip_min
+                timeline_h = max(timeline_min, aux_available - strip_h)
+            self._timeline_aux_splitter.setSizes([timeline_h, max(strip_h, strip_min)])
 
-        timeline_h = max(timeline_min, int(available_height * 0.74))
-        strip_h = available_height - timeline_h
-        if strip_h < strip_min:
-            strip_h = strip_min
-            timeline_h = max(timeline_min, available_height - strip_h)
+        total_available = self._center_vertical_splitter.size().height()
+        if total_available <= 0:
+            total_available = grid_min + timeline_min + (strip_min if frame_strip_visible else 0) + 120
 
-        self._center_vertical_splitter.setSizes([timeline_h, max(strip_h, strip_min)])
+        grid_h = max(grid_min, int(total_available * 0.62))
+        aux_h = total_available - grid_h
+        aux_min = timeline_min + (strip_min if frame_strip_visible else 0) // 2
+        if aux_h < aux_min:
+            aux_h = aux_min
+            grid_h = max(grid_min, total_available - aux_h)
+        self._center_vertical_splitter.setSizes([grid_h, max(aux_h, aux_min)])
 
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
@@ -696,6 +736,10 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.timeline_panel.range_changed.connect(self._on_range_changed)
         self.timeline_panel.sample_activated.connect(self._on_sample_activated)
         self.frame_strip.frame_selected.connect(self._on_frame_selected)
+        self.sample_grid_panel.sample_activated.connect(self._on_sample_activated)
+        self.sample_grid_panel.batch_scene_update_requested.connect(
+            self._on_batch_scene_update_requested
+        )
 
         self.export_panel.export_requested.connect(self._on_export_requested)
 
@@ -704,38 +748,15 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self.session_list.itemClicked.connect(self._on_session_selected)
 
-    def _load_demo_data(self) -> None:
-        """加载演示数据，确保窗口启动后可直接交互。"""
-        self.session_list.addItem(QListWidgetItem("day1_luolan"))
-        self.session_list.addItem(QListWidgetItem("day2_forest"))
-
-        base_time = datetime(2026, 2, 25, 14, 0, 0)
-        scenes = ["combat", "navigate", "loot", "boss", "other"]
-
+    def _initialize_empty_workspace(self) -> None:
+        """初始化空工作区，不加载任何默认模拟会话和样本。"""
         self._samples = []
-        for idx in range(240):
-            ts = base_time + timedelta(seconds=idx)
-            scene = scenes[idx % len(scenes)]
-            ts_ms = int(ts.timestamp() * 1000)
-            self._samples.append(
-                {
-                    "sample_id": f"sample_{idx:06d}",
-                    "timestamp_ms": ts_ms,
-                    "timestamp_iso": ts.isoformat() + "Z",
-                    "scene": scene,
-                    "image_rel_path": f"images/{scene}_{idx:06d}.jpg",
-                    "state": "raw",
-                    "manual_flag": "none",
-                    "filtered": False,
-                    "filter_reason": "",
-                    "source_session": "demo_session",
-                }
-            )
-
-        self.timeline_panel.set_samples(self._samples)
-        self.frame_strip.set_frames([str(item["image_rel_path"]) for item in self._samples])
-        self.export_panel.set_range(len(self._samples) - 1, 0, len(self._samples) - 1)
-        self._append_log("已加载演示会话与样本数据。")
+        self.session_list.clear()
+        self.timeline_panel.set_samples([])
+        self.sample_grid_panel.set_samples([])
+        self.frame_strip.set_frames([])
+        self.export_panel.set_range(0, 0, 0)
+        self._append_log("未加载默认演示数据，请先开始采集或切换到已有会话。")
 
     def _list_window_titles(self) -> List[str]:
         """枚举可选窗口标题。"""
@@ -980,6 +1001,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             "filtered_duplicate": 0,
             "write_failures": 0,
         }
+        self._samples = []
+        self.timeline_panel.set_samples([])
+        self.sample_grid_panel.set_samples([])
+        self.frame_strip.set_frames([])
+        self.export_panel.set_range(0, 0, 0)
+        self.session_list.clear()
 
         if self._capture_meta_file.exists():
             self._capture_meta_file.unlink()
@@ -1191,17 +1218,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_prev_saved_timestamp_ms = timestamp_ms
         self._capture_prev_saved_frame = frame.copy() if hasattr(frame, "copy") else frame
 
-        if self._using_demo_data:
-            self._using_demo_data = False
-            self._samples = []
-            self.timeline_panel.set_samples([])
-            self.frame_strip.set_frames([])
-            self.session_list.clear()
+        existing = self.session_list.findItems(self._capture_session_name, Qt.MatchExactly)
+        if not existing:
             self.session_list.addItem(QListWidgetItem(self._capture_session_name))
             self.session_list.setCurrentRow(0)
 
         self._samples.append(sample)
         self.timeline_panel.append_sample(sample)
+        self.sample_grid_panel.append_sample(sample)
         self.frame_strip.append_frame(image_rel_path)
 
     def _write_image_robust(self, image_path: Path, frame: Any) -> bool:
@@ -1235,10 +1259,56 @@ class TimelineWorkbenchWindow(QMainWindow):
         """点击缩略图列表后的日志反馈。"""
         self._append_log(f"选中帧: {image_path}")
 
+    def _on_batch_scene_update_requested(self, sample_ids: object, new_scene: str) -> None:
+        """批量修正选中样本的场景标签。"""
+        if not isinstance(sample_ids, list):
+            return
+        target_scene = str(new_scene).strip()
+        if not target_scene:
+            return
+
+        id_set = {str(item).strip() for item in sample_ids if str(item).strip()}
+        if not id_set:
+            self._append_log("批量修正已取消：未选择样本。")
+            return
+
+        changed = 0
+        for sample in self._samples:
+            sid = str(sample.get("sample_id", "")).strip()
+            if sid and sid in id_set:
+                if str(sample.get("scene", "")) != target_scene:
+                    sample["scene"] = target_scene
+                    sample["state"] = "curated"
+                    sample["manual_updated_at"] = self._iso_utc_now()
+                    changed += 1
+
+        if changed == 0:
+            self._append_log("批量修正完成：选中样本场景无变化。")
+            return
+
+        self.timeline_panel.set_samples(self._samples)
+        self.sample_grid_panel.set_samples(self._samples)
+        self.frame_strip.set_frames([str(item.get("image_rel_path", "-")) for item in self._samples])
+        self.export_panel.set_range(len(self._samples) - 1, 0, len(self._samples) - 1)
+        self._rewrite_samples_meta_file()
+        self._append_log(f"批量修正完成：{changed} 条样本场景更新为 {target_scene}。")
+
+    def _rewrite_samples_meta_file(self) -> None:
+        """将内存中的样本列表回写到 samples.jsonl。"""
+        if self._capture_meta_file is None:
+            return
+        try:
+            with self._capture_meta_file.open("w", encoding="utf-8") as fp:
+                for sample in self._samples:
+                    fp.write(json.dumps(sample, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            self._append_log(f"回写 samples.jsonl 失败: {exc}")
+
     def _on_export_requested(self, payload: Dict[str, object]) -> None:
         """处理导出请求。"""
         if not self._samples:
             self._append_log("导出失败：当前没有可导出的样本。")
+            self.export_panel.set_validation_summary("当前无样本可导出", blocking=True)
             return
 
         start_idx = max(0, int(payload.get("start_index", 0)))
@@ -1260,6 +1330,24 @@ class TimelineWorkbenchWindow(QMainWindow):
             )
             if not selected_samples:
                 self._append_log("导出取消：筛选结果为空。")
+                self.export_panel.set_validation_summary("筛选结果为空", blocking=True)
+                return
+
+            precheck = self._build_pre_export_validation_report(
+                selected_samples=selected_samples,
+                output_dir=output_dir,
+            )
+            if precheck["blocking_errors"]:
+                self.export_panel.set_validation_summary(
+                    precheck["summary"], blocking=True
+                )
+            else:
+                self.export_panel.set_validation_summary(
+                    precheck["summary"], blocking=False
+                )
+
+            if not self._show_pre_export_validation_preview(precheck):
+                self._append_log("导出已取消：未通过导出前校验。")
                 return
 
             export_summary = self._export_selected_samples(
@@ -1274,8 +1362,102 @@ class TimelineWorkbenchWindow(QMainWindow):
                 f"total={export_summary.get('total', 0)}, "
                 f"missing={export_summary.get('missing', 0)}"
             )
+            self.export_panel.set_validation_summary("校验通过并完成导出", blocking=False)
         except Exception as exc:
             self._append_log(f"导出失败: {exc}")
+            self.export_panel.set_validation_summary(f"导出失败: {exc}", blocking=True)
+
+    def _build_pre_export_validation_report(
+        self,
+        selected_samples: List[Dict[str, object]],
+        output_dir: str,
+    ) -> Dict[str, object]:
+        """生成导出前校验报告（UI级预览）。"""
+        blocking_errors: List[str] = []
+        warnings: List[str] = []
+        allowed_scenes = {"combat", "navigate", "loot", "boss", "other"}
+
+        if not selected_samples:
+            blocking_errors.append("选择集为空")
+
+        output_root = Path(output_dir)
+        output_root_parent = output_root if output_root.exists() else output_root.parent
+        if output_root_parent and not output_root_parent.exists():
+            blocking_errors.append(f"输出目录不可用: {output_root_parent}")
+
+        sample_ids: List[str] = []
+        missing_source_count = 0
+        invalid_scene_count = 0
+        missing_timestamp_count = 0
+
+        for sample in selected_samples:
+            sample_ids.append(str(sample.get("sample_id", "")))
+            scene = str(sample.get("scene", "other")).strip().lower()
+            if scene not in allowed_scenes:
+                invalid_scene_count += 1
+
+            if sample.get("timestamp_ms") in (None, ""):
+                missing_timestamp_count += 1
+
+            source_path = self._resolve_source_image_path(sample)
+            if source_path is None or not source_path.exists():
+                missing_source_count += 1
+
+        duplicate_ids = len(sample_ids) - len(set(sample_ids))
+        if duplicate_ids > 0:
+            blocking_errors.append(f"存在重复 sample_id: {duplicate_ids}")
+        if missing_source_count >= len(selected_samples):
+            blocking_errors.append("所有样本的源图片均不可访问")
+
+        if missing_source_count > 0 and missing_source_count < len(selected_samples):
+            warnings.append(f"部分样本源图片缺失: {missing_source_count}")
+        if invalid_scene_count > 0:
+            warnings.append(f"存在非标准场景标签: {invalid_scene_count}")
+        if missing_timestamp_count > 0:
+            warnings.append(f"存在缺失时间戳样本: {missing_timestamp_count}")
+
+        summary = (
+            f"样本={len(selected_samples)}，"
+            f"缺失源图={missing_source_count}，"
+            f"重复ID={duplicate_ids}，"
+            f"阻断={len(blocking_errors)}，警告={len(warnings)}"
+        )
+        return {
+            "summary": summary,
+            "blocking_errors": blocking_errors,
+            "warnings": warnings,
+            "sample_count": len(selected_samples),
+        }
+
+    def _show_pre_export_validation_preview(self, report: Dict[str, object]) -> bool:
+        """弹出导出前校验预览，阻断级错误时禁止导出。"""
+        summary = str(report.get("summary", ""))
+        blocking_errors = list(report.get("blocking_errors", []))
+        warnings = list(report.get("warnings", []))
+
+        if blocking_errors:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("导出前校验未通过")
+            msg.setText("检测到阻断级问题，已禁止导出。")
+            detail = "\n".join([f"- {item}" for item in blocking_errors])
+            if warnings:
+                detail += "\n\n警告:\n" + "\n".join([f"- {item}" for item in warnings])
+            msg.setDetailedText(detail)
+            msg.exec_()
+            return False
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("导出前校验预览")
+        msg.setText("校验通过，是否继续导出？")
+        detail = summary
+        if warnings:
+            detail += "\n\n警告:\n" + "\n".join([f"- {item}" for item in warnings])
+        msg.setDetailedText(detail)
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.Yes)
+        return msg.exec_() == QMessageBox.Yes
 
     def _sample_timestamp_ms(self, sample: Dict[str, object], fallback_ms: int) -> int:
         """提取样本毫秒时间戳，缺失时回落到调用方提供的默认值。"""
