@@ -327,3 +327,39 @@ QScrollBar::sub-page {
     background: none;
     border: none;
 }
+
+QMessageBox,
+QMessageBox QWidget {
+    background-color: #FFFFFF;
+    color: #111827;
+}
+
+QMessageBox QLabel {
+    background: transparent;
+    color: #111827;
+}
+
+QMessageBox QPushButton {
+    min-height: 32px;
+    min-width: 92px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid #D1D5DB;
+    background-color: #F9FAFB;
+    color: #111827;
+}
+
+QMessageBox QPushButton:hover {
+    background-color: #EEF2F7;
+}
+
+QMessageBox QPushButton:pressed {
+    background-color: #E5EAF1;
+}
+
+QMessageBox QPushButton:default {
+    border: none;
+    background-color: #2563EB;
+    color: #FFFFFF;
+    font-weight: 600;
+}
