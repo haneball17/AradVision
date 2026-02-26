@@ -128,6 +128,11 @@ coverage.xml
 *~
 *.swo
 
+# 临时目录
+tmp/
+tmp_*/
+.tmp/
+
 # 系统文件
 .DS_Store
 .DS_Store?
