@@ -12,6 +12,8 @@ import platform
 import uuid
 import json
 import time
+import re
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -398,11 +400,12 @@ class TimelineWorkbenchWindow(QMainWindow):
                 raise RuntimeError("捕获引擎返回空帧")
 
             self.video_preview.update_frame(frame)
-            self._capture_error_streak = 0
             self._capture_frame_count += 1
 
             if self._should_save_frame():
                 self._save_capture_frame(frame)
+
+            self._capture_error_streak = 0
 
             if self._capture_frame_count % 30 == 0:
                 stats = self._capture_engine.get_stats()
@@ -426,8 +429,7 @@ class TimelineWorkbenchWindow(QMainWindow):
     def _prepare_capture_session(self, window_title: str) -> None:
         """初始化本次采集会话目录与元数据文件。"""
         session_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_window = "".join(ch if ch.isalnum() else "_" for ch in window_title)[:40].strip("_")
-        safe_window = safe_window or "window"
+        safe_window = self._build_ascii_window_tag(window_title)
         self._capture_session_name = f"ui_capture_{session_stamp}_{safe_window}"
 
         self._capture_session_dir = Path("assets/images/raw") / self._capture_session_name
@@ -443,6 +445,22 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         if self._capture_meta_file.exists():
             self._capture_meta_file.unlink()
+
+    def _build_ascii_window_tag(self, window_title: str) -> str:
+        """构建仅含 ASCII 的窗口标识，避免 Windows 落盘路径兼容问题。"""
+        # 仅保留 ASCII 字母数字，其余归一为下划线，避免路径编码问题。
+        ascii_only = "".join(
+            ch.lower() if ch.isascii() and ch.isalnum() else "_"
+            for ch in window_title
+        )
+        ascii_only = re.sub(r"_+", "_", ascii_only).strip("_")
+
+        # 极端情况下（全中文标题）使用稳定哈希，保证目录可读且可追溯。
+        if not ascii_only:
+            digest = hashlib.sha1(window_title.encode("utf-8")).hexdigest()[:10]
+            return f"window_{digest}"
+
+        return ascii_only[:24]
 
     def _should_save_frame(self) -> bool:
         """判断当前帧是否达到落盘时机。"""
@@ -473,8 +491,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         image_path = self._capture_images_dir / filename
         image_rel_path = f"images/{filename}"
 
-        ok = cv2.imwrite(str(image_path), frame)
-        if not ok:
+        if not self._write_image_robust(image_path, frame):
             raise RuntimeError(f"图片写入失败: {image_path}")
 
         height = int(frame.shape[0]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
@@ -509,6 +526,25 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._samples.append(sample)
         self.timeline_panel.append_sample(sample)
         self.frame_strip.append_frame(image_rel_path)
+
+    def _write_image_robust(self, image_path: Path, frame: Any) -> bool:
+        """稳健写图：优先 imwrite，失败后使用 imencode+tofile 回退。"""
+        if not HAS_CV2:
+            return False
+
+        # 第一优先：常规写入。
+        if cv2.imwrite(str(image_path), frame):
+            return True
+
+        # 回退方案：兼容 Windows 上部分 OpenCV 构建对 Unicode 路径支持不足的情况。
+        try:
+            encoded_ok, encoded = cv2.imencode(".jpg", frame)
+            if not encoded_ok:
+                return False
+            encoded.tofile(str(image_path))
+            return True
+        except Exception:
+            return False
 
     def _on_range_changed(self, start_idx: int, end_idx: int) -> None:
         """同步导出参数区间。"""
