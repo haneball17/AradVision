@@ -60,6 +60,8 @@ from ui.widgets.workspace_switch_bar import WorkspaceSwitchBar
 class TimelineWorkbenchWindow(QMainWindow):
     """时间线工作台主窗口。"""
 
+    UI_LAYOUT_VERSION = 2
+
     def __init__(self):
         super().__init__()
 
@@ -333,9 +335,13 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self._center_vertical_splitter = QSplitter(Qt.Vertical)
         self._center_vertical_splitter.setHandleWidth(8)
+        self._center_vertical_splitter.setChildrenCollapsible(False)
         self._center_vertical_splitter.addWidget(self.video_preview)
         self._center_vertical_splitter.addWidget(self.timeline_panel)
         self._center_vertical_splitter.addWidget(self.frame_strip)
+        self._center_vertical_splitter.setCollapsible(0, False)
+        self._center_vertical_splitter.setCollapsible(1, False)
+        self._center_vertical_splitter.setCollapsible(2, True)
         self._center_vertical_splitter.setStretchFactor(0, 3)
         self._center_vertical_splitter.setStretchFactor(1, 3)
         self._center_vertical_splitter.setStretchFactor(2, 1)
@@ -353,6 +359,11 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.export_panel.setMinimumWidth(260)
         export_layout.addWidget(self.export_panel, stretch=1)
         self._capture_content_splitter.addWidget(export_panel_card)
+        self._capture_content_splitter.setChildrenCollapsible(False)
+        self._capture_content_splitter.setCollapsible(0, False)
+        self._capture_content_splitter.setCollapsible(1, False)
+        self._capture_content_splitter.setStretchFactor(0, 4)
+        self._capture_content_splitter.setStretchFactor(1, 1)
 
         self._capture_content_splitter.setSizes([860, 320])
         return workspace
@@ -436,13 +447,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         geometry = self._settings.value("window/geometry")
         state = self._settings.value("window/state")
         has_persisted = bool(self._settings.value("window/persisted", False, type=bool))
+        layout_version = int(self._settings.value("window/layout_version", 0, type=int))
 
         if geometry is not None:
             self.restoreGeometry(geometry)
         if state is not None:
             self.restoreState(state)
 
-        if has_persisted:
+        if has_persisted and layout_version >= self.UI_LAYOUT_VERSION:
             session_visible = bool(
                 self._settings.value("dock/session_visible", False, type=bool)
             )
@@ -460,8 +472,70 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._settings.setValue("window/state", self.saveState())
         self._settings.setValue("dock/session_visible", self._session_dock.isVisible())
         self._settings.setValue("dock/log_visible", self._log_dock.isVisible())
+        self._settings.setValue("window/layout_version", self.UI_LAYOUT_VERSION)
         self._settings.setValue("window/persisted", True)
         self._settings.sync()
+
+    def _rebalance_center_splitter(self, mode: str, scale: float) -> None:
+        """按模式和缩放系数重算中区纵向布局，避免高缩放下预览/时间线挤压。"""
+        # Qt 在高 DPI 下使用逻辑像素，因此这里采用“反向缩放”估算最小高度。
+        preview_min = max(180, int(280 / scale))
+        timeline_min = max(140, int(220 / scale))
+        strip_min = max(72, int(120 / scale))
+
+        if mode == "default":
+            preview_min = max(preview_min, 260)
+            timeline_min = max(timeline_min, 200)
+            self.frame_strip.setMaximumHeight(200)
+        elif mode == "compact":
+            preview_min = max(preview_min, 220)
+            timeline_min = max(timeline_min, 170)
+            self.frame_strip.setMaximumHeight(160)
+        else:
+            preview_min = max(preview_min, 190)
+            timeline_min = max(timeline_min, 150)
+            self.frame_strip.setMaximumHeight(0)
+
+        frame_strip_visible = not self.frame_strip.isHidden()
+        self.video_preview.setMinimumHeight(preview_min)
+        self.timeline_panel.setMinimumHeight(timeline_min)
+        self.frame_strip.setMinimumHeight(strip_min if frame_strip_visible else 0)
+
+        available_height = self._center_vertical_splitter.size().height()
+        if available_height <= 0:
+            available_height = preview_min + timeline_min + (strip_min if frame_strip_visible else 0) + 80
+
+        if not frame_strip_visible:
+            preview_h = max(preview_min, int(available_height * 0.58))
+            timeline_h = max(timeline_min, available_height - preview_h)
+            if preview_h + timeline_h > available_height:
+                preview_h = max(preview_min, available_height - timeline_min)
+                timeline_h = max(timeline_min, available_height - preview_h)
+            self._center_vertical_splitter.setSizes([preview_h, timeline_h, 0])
+            return
+
+        preview_h = max(preview_min, int(available_height * 0.48))
+        timeline_h = max(timeline_min, int(available_height * 0.34))
+        strip_h = available_height - preview_h - timeline_h
+
+        if strip_h < strip_min:
+            deficit = strip_min - strip_h
+            preview_slack = max(preview_h - preview_min, 0)
+            timeline_slack = max(timeline_h - timeline_min, 0)
+
+            take_preview = min((deficit + 1) // 2, preview_slack)
+            take_timeline = min(deficit - take_preview, timeline_slack)
+            preview_h -= take_preview
+            timeline_h -= take_timeline
+            strip_h = available_height - preview_h - timeline_h
+
+        if strip_h < strip_min:
+            strip_h = strip_min
+            remaining = available_height - strip_h
+            preview_h = max(preview_min, int(remaining * 0.58))
+            timeline_h = max(timeline_min, remaining - preview_h)
+
+        self._center_vertical_splitter.setSizes([preview_h, timeline_h, max(strip_h, strip_min)])
 
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
@@ -495,9 +569,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 16
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(300)
-            self.video_preview.setMinimumSize(640, 360)
             self._capture_content_splitter.setSizes([780, 340])
-            self._center_vertical_splitter.setSizes([340, 290, 120])
             self.capture_control_bar.set_compact_mode(False)
             self.workspace_switch_bar.set_compact_mode(False)
             self._page_subtitle.setVisible(True)
@@ -509,9 +581,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 12
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(260)
-            self.video_preview.setMinimumSize(500, 280)
             self._capture_content_splitter.setSizes([690, 300])
-            self._center_vertical_splitter.setSizes([300, 260, 100])
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
@@ -523,9 +593,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 8
             self._capture_content_splitter.setOrientation(Qt.Vertical)
             self.export_panel.setMinimumWidth(0)
-            self.video_preview.setMinimumSize(360, 210)
             self._capture_content_splitter.setSizes([620, 220])
-            self._center_vertical_splitter.setSizes([420, 320, 0])
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
@@ -547,6 +615,8 @@ class TimelineWorkbenchWindow(QMainWindow):
         ):
             layout.setContentsMargins(card_padding, card_padding, card_padding, card_padding)
             layout.setSpacing(section_spacing)
+
+        self._rebalance_center_splitter(mode, scale)
 
     def _connect_signals(self) -> None:
         """连接界面交互信号。"""

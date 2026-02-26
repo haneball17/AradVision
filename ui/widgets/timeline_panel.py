@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QSizePolicy,
 )
 
 
@@ -27,6 +28,8 @@ class TimelinePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("TimelinePanel")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(160)
 
         self._samples: List[Dict[str, object]] = []
 
@@ -55,9 +58,12 @@ class TimelinePanel(QWidget):
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["时间", "场景", "文件"])
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setMinimumSectionSize(72)
         self.table.setSelectionBehavior(self.table.SelectRows)
         self.table.setEditTriggers(self.table.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(26)
+        self.table.setMinimumHeight(110)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 

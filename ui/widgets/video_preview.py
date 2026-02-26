@@ -35,8 +35,8 @@ class VideoPreviewWidget(QLabel):
         super().__init__(parent)
         self.setObjectName("VideoPreview")
 
-        # 保持可扩展，兼顾桌面与较小窗口。
-        self.setMinimumSize(640, 360)
+        # 默认最小尺寸保持温和，具体下限交由外层响应式布局统一调度。
+        self.setMinimumSize(320, 190)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
 

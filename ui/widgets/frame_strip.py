@@ -7,7 +7,14 @@
 from typing import List
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QLabel
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QSizePolicy,
+)
 
 
 class FrameStrip(QWidget):
@@ -19,6 +26,8 @@ class FrameStrip(QWidget):
         super().__init__(parent)
         self.setObjectName("FrameStrip")
         self._collapsed = False
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(90)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -29,6 +38,7 @@ class FrameStrip(QWidget):
         layout.addWidget(self.title_label)
 
         self.list_widget = QListWidget()
+        self.list_widget.setMinimumHeight(68)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.list_widget)
 
@@ -52,4 +62,5 @@ class FrameStrip(QWidget):
         if self._collapsed == collapsed:
             return
         self._collapsed = collapsed
+        self.setMinimumHeight(0 if collapsed else 90)
         self.setVisible(not collapsed)
