@@ -29,15 +29,22 @@ class PseudoLabelPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("PseudoLabelPanel")
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("预标注工作区"))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        title = QLabel("预标注任务")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
 
         self.dataset_edit = QLineEdit("assets/images/selected")
         self.model_edit = QLineEdit("models/yolov8n_dnf.pt")
         self.version_edit = QLineEdit("v1.0")
 
         dataset_layout = QHBoxLayout()
+        dataset_layout.setSpacing(8)
         dataset_layout.addWidget(QLabel("数据集"))
         dataset_layout.addWidget(self.dataset_edit)
         dataset_btn = QPushButton("浏览")
@@ -45,6 +52,7 @@ class PseudoLabelPanel(QWidget):
         dataset_layout.addWidget(dataset_btn)
 
         model_layout = QHBoxLayout()
+        model_layout.setSpacing(8)
         model_layout.addWidget(QLabel("模型"))
         model_layout.addWidget(self.model_edit)
         model_btn = QPushButton("浏览")
@@ -52,16 +60,21 @@ class PseudoLabelPanel(QWidget):
         model_layout.addWidget(model_btn)
 
         version_layout = QHBoxLayout()
+        version_layout.setSpacing(8)
         version_layout.addWidget(QLabel("版本"))
         version_layout.addWidget(self.version_edit)
+        version_layout.addStretch()
 
         layout.addLayout(dataset_layout)
         layout.addLayout(model_layout)
         layout.addLayout(version_layout)
 
         self.start_button = QPushButton("开始预标注")
+        self.start_button.setObjectName("PrimaryButton")
         self.stop_button = QPushButton("停止任务")
+        self.stop_button.setObjectName("DangerButton")
         action_layout = QHBoxLayout()
+        action_layout.setSpacing(8)
         action_layout.addWidget(self.start_button)
         action_layout.addWidget(self.stop_button)
         action_layout.addStretch()
@@ -72,6 +85,8 @@ class PseudoLabelPanel(QWidget):
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.task_table.setEditTriggers(self.task_table.NoEditTriggers)
         self.task_table.setSelectionBehavior(self.task_table.SelectRows)
+        self.task_table.verticalHeader().setVisible(False)
+        self.task_table.setAlternatingRowColors(True)
         layout.addWidget(self.task_table)
 
         self.start_button.clicked.connect(self._emit_start)

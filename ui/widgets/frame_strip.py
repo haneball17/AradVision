@@ -17,9 +17,15 @@ class FrameStrip(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("FrameStrip")
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("缩略图时间流（文件列表）"))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        title = QLabel("时间线文件流")
+        title.setObjectName("SubSectionTitle")
+        layout.addWidget(title)
 
         self.list_widget = QListWidget()
         self.list_widget.itemClicked.connect(self._on_item_clicked)

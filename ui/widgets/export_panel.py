@@ -28,12 +28,17 @@ class ExportPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("ExportPanel")
 
         self._max_index = 0
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
-        layout.addWidget(QLabel("导出参数"))
+        title = QLabel("导出参数")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
 
         self.start_spin = QSpinBox()
         self.end_spin = QSpinBox()
@@ -41,9 +46,10 @@ class ExportPanel(QWidget):
         self.end_spin.setMinimum(0)
 
         range_layout = QHBoxLayout()
-        range_layout.addWidget(QLabel("起点"))
+        range_layout.setSpacing(8)
+        range_layout.addWidget(QLabel("起点 A"))
         range_layout.addWidget(self.start_spin)
-        range_layout.addWidget(QLabel("终点"))
+        range_layout.addWidget(QLabel("终点 B"))
         range_layout.addWidget(self.end_spin)
         layout.addLayout(range_layout)
 
@@ -55,6 +61,7 @@ class ExportPanel(QWidget):
         self.interval_custom_spin.setEnabled(False)
 
         interval_layout = QHBoxLayout()
+        interval_layout.setSpacing(8)
         interval_layout.addWidget(QLabel("采样频率"))
         interval_layout.addWidget(self.interval_combo)
         interval_layout.addWidget(self.interval_custom_spin)
@@ -64,15 +71,18 @@ class ExportPanel(QWidget):
         self.browse_button = QPushButton("浏览")
 
         output_layout = QHBoxLayout()
+        output_layout.setSpacing(8)
         output_layout.addWidget(QLabel("输出目录"))
         output_layout.addWidget(self.output_edit)
         output_layout.addWidget(self.browse_button)
         layout.addLayout(output_layout)
 
         self.estimate_label = QLabel("预计导出: 0")
+        self.estimate_label.setObjectName("StatusPill")
         layout.addWidget(self.estimate_label)
 
         self.export_button = QPushButton("开始导出")
+        self.export_button.setObjectName("PrimaryButton")
         layout.addWidget(self.export_button)
         layout.addStretch()
 
