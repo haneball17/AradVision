@@ -138,6 +138,22 @@ class TimelineWorkbenchWindow(QMainWindow):
         height = max(760, int(available.height() * 0.88))
         self.resize(width, height)
 
+    def _get_ui_scale_factor(self) -> float:
+        """读取当前窗口所在屏幕的 UI 缩放系数（基于逻辑 DPI）。"""
+        screen = None
+        handle = self.windowHandle()
+        if handle is not None:
+            screen = handle.screen()
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is None:
+            return 1.0
+
+        logical_dpi = float(screen.logicalDotsPerInch())
+        if logical_dpi <= 0:
+            return 1.0
+        return max(1.0, logical_dpi / 96.0)
+
     def _init_ui(self) -> None:
         """初始化主界面结构。"""
         central = QWidget()
@@ -323,11 +339,23 @@ class TimelineWorkbenchWindow(QMainWindow):
         super().resizeEvent(event)
         self._apply_responsive_layout(event.size().width())
 
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        """窗口显示后再执行一次响应式判定，确保获取到正确屏幕 DPI。"""
+        super().showEvent(event)
+        self._apply_responsive_layout(self.width(), force=True)
+
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
-        if width < 1460:
+        scale = self._get_ui_scale_factor()
+
+        # 优先按缩放系数判断，再用宽度微调，避免 150% 在高分屏下误判为 default。
+        if scale >= 1.45:
             mode = "dense"
-        elif width < 1720:
+        elif scale >= 1.25:
+            mode = "compact" if width < 1850 else "default"
+        elif width < 1360:
+            mode = "dense"
+        elif width < 1680:
             mode = "compact"
         else:
             mode = "default"
@@ -336,6 +364,10 @@ class TimelineWorkbenchWindow(QMainWindow):
             return
 
         self._responsive_mode = mode
+        logger.info(
+            "[TimelineWorkbench] 响应式布局切换: "
+            f"mode={mode}, width={width}, scale={scale:.2f}"
+        )
 
         if mode == "default":
             outer_margin = 24
