@@ -12,6 +12,8 @@ import platform
 import uuid
 import json
 import time
+import re
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -104,35 +106,73 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._connect_signals()
         self._load_demo_data()
         self._refresh_window_candidates()
-        self.apply_theme("dark")
+        self.apply_theme("light")
 
         logger.info("时间线工作台窗口初始化完成")
 
     def _init_ui(self) -> None:
         """初始化主界面结构。"""
         central = QWidget()
+        central.setObjectName("TimelineRoot")
         self.setCentralWidget(central)
 
         root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(24, 24, 24, 24)
+        root_layout.setSpacing(16)
+
+        top_card = QWidget()
+        top_card.setObjectName("TopCard")
+        top_layout = QVBoxLayout(top_card)
+        top_layout.setContentsMargins(16, 16, 16, 16)
+        top_layout.setSpacing(12)
+
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(8)
+        title_label = QLabel("数据采集时间线工作台")
+        title_label.setObjectName("PageTitle")
+        subtitle_label = QLabel("采集、筛选、导出与预标注统一入口")
+        subtitle_label.setObjectName("PageSubtitle")
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(subtitle_label)
+        title_layout.addStretch()
 
         self.workspace_switch_bar = WorkspaceSwitchBar()
-        root_layout.addWidget(self.workspace_switch_bar)
-
         self.capture_control_bar = CaptureControlBar()
-        root_layout.addWidget(self.capture_control_bar)
+
+        top_layout.addLayout(title_layout)
+        top_layout.addWidget(self.workspace_switch_bar)
+        top_layout.addWidget(self.capture_control_bar)
+        root_layout.addWidget(top_card)
 
         self.workspace_stack = QStackedWidget()
-        root_layout.addWidget(self.workspace_stack, stretch=1)
+        workspace_card = QWidget()
+        workspace_card.setObjectName("WorkspaceCard")
+        workspace_layout = QVBoxLayout(workspace_card)
+        workspace_layout.setContentsMargins(16, 16, 16, 16)
+        workspace_layout.setSpacing(12)
+        workspace_layout.addWidget(self.workspace_stack, stretch=1)
 
         self.workspace_stack.addWidget(self._build_capture_workspace())
         self.workspace_stack.addWidget(self._build_pseudo_workspace())
+        root_layout.addWidget(workspace_card, stretch=1)
+
+        log_card = QWidget()
+        log_card.setObjectName("LogCard")
+        log_layout = QVBoxLayout(log_card)
+        log_layout.setContentsMargins(16, 16, 16, 16)
+        log_layout.setSpacing(8)
+
+        log_title = QLabel("系统日志")
+        log_title.setObjectName("SectionTitle")
+        log_layout.addWidget(log_title)
 
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumBlockCount(1000)
-        self.log_text.setFixedHeight(150)
-        root_layout.addWidget(QLabel("系统日志"))
-        root_layout.addWidget(self.log_text)
+        self.log_text.setFixedHeight(180)
+        log_layout.addWidget(self.log_text)
+        root_layout.addWidget(log_card)
 
     def _load_runtime_config(self) -> None:
         """加载运行时配置。"""
@@ -152,37 +192,75 @@ class TimelineWorkbenchWindow(QMainWindow):
         """构建采集工作区布局。"""
         workspace = QWidget()
         layout = QHBoxLayout(workspace)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(10)
         layout.addWidget(splitter)
+
+        session_panel = QWidget()
+        session_panel.setObjectName("SessionPanel")
+        session_layout = QVBoxLayout(session_panel)
+        session_layout.setContentsMargins(16, 16, 16, 16)
+        session_layout.setSpacing(10)
+        session_title = QLabel("会话列表")
+        session_title.setObjectName("SectionTitle")
+        session_layout.addWidget(session_title)
+        session_hint = QLabel("选择会话后可查看样本时间线")
+        session_hint.setObjectName("HintText")
+        session_layout.addWidget(session_hint)
 
         self.session_list = QListWidget()
         self.session_list.setMinimumWidth(220)
-        splitter.addWidget(self.session_list)
+        session_layout.addWidget(self.session_list, stretch=1)
+        splitter.addWidget(session_panel)
 
-        center_widget = QWidget()
-        center_layout = QVBoxLayout(center_widget)
+        center_panel = QWidget()
+        center_panel.setObjectName("CenterPanel")
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(16, 16, 16, 16)
+        center_layout.setSpacing(12)
+        preview_title = QLabel("实时预览与时间线")
+        preview_title.setObjectName("SectionTitle")
+        center_layout.addWidget(preview_title)
         self.video_preview = VideoPreviewWidget()
         self.timeline_panel = TimelinePanel()
         self.frame_strip = FrameStrip()
         center_layout.addWidget(self.video_preview, stretch=2)
         center_layout.addWidget(self.timeline_panel, stretch=2)
         center_layout.addWidget(self.frame_strip, stretch=1)
-        splitter.addWidget(center_widget)
+        splitter.addWidget(center_panel)
 
+        export_panel_card = QWidget()
+        export_panel_card.setObjectName("ExportPanelCard")
+        export_layout = QVBoxLayout(export_panel_card)
+        export_layout.setContentsMargins(16, 16, 16, 16)
+        export_layout.setSpacing(10)
         self.export_panel = ExportPanel()
         self.export_panel.setMinimumWidth(320)
-        splitter.addWidget(self.export_panel)
+        export_layout.addWidget(self.export_panel, stretch=1)
+        splitter.addWidget(export_panel_card)
 
-        splitter.setSizes([220, 760, 320])
+        splitter.setSizes([260, 780, 340])
         return workspace
 
     def _build_pseudo_workspace(self) -> QWidget:
         """构建预标注工作区布局。"""
         workspace = QWidget()
         layout = QVBoxLayout(workspace)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        pseudo_card = QWidget()
+        pseudo_card.setObjectName("PseudoPanelCard")
+        pseudo_layout = QVBoxLayout(pseudo_card)
+        pseudo_layout.setContentsMargins(16, 16, 16, 16)
+        pseudo_layout.setSpacing(10)
+
         self.pseudo_label_panel = PseudoLabelPanel()
-        layout.addWidget(self.pseudo_label_panel)
+        pseudo_layout.addWidget(self.pseudo_label_panel)
+        layout.addWidget(pseudo_card)
         return workspace
 
     def _connect_signals(self) -> None:
@@ -274,7 +352,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.capture_control_bar.set_window_options(titles, preferred)
         self._append_log(f"窗口列表已刷新，可选窗口数量: {len(titles)}")
 
-    def apply_theme(self, theme: str = "dark") -> None:
+    def apply_theme(self, theme: str = "light") -> None:
         """应用 QSS 主题。"""
         theme_path = Path(__file__).parent / "themes" / f"{theme}.qss"
         if not theme_path.exists():
@@ -398,11 +476,12 @@ class TimelineWorkbenchWindow(QMainWindow):
                 raise RuntimeError("捕获引擎返回空帧")
 
             self.video_preview.update_frame(frame)
-            self._capture_error_streak = 0
             self._capture_frame_count += 1
 
             if self._should_save_frame():
                 self._save_capture_frame(frame)
+
+            self._capture_error_streak = 0
 
             if self._capture_frame_count % 30 == 0:
                 stats = self._capture_engine.get_stats()
@@ -426,8 +505,7 @@ class TimelineWorkbenchWindow(QMainWindow):
     def _prepare_capture_session(self, window_title: str) -> None:
         """初始化本次采集会话目录与元数据文件。"""
         session_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_window = "".join(ch if ch.isalnum() else "_" for ch in window_title)[:40].strip("_")
-        safe_window = safe_window or "window"
+        safe_window = self._build_ascii_window_tag(window_title)
         self._capture_session_name = f"ui_capture_{session_stamp}_{safe_window}"
 
         self._capture_session_dir = Path("assets/images/raw") / self._capture_session_name
@@ -443,6 +521,22 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         if self._capture_meta_file.exists():
             self._capture_meta_file.unlink()
+
+    def _build_ascii_window_tag(self, window_title: str) -> str:
+        """构建仅含 ASCII 的窗口标识，避免 Windows 落盘路径兼容问题。"""
+        # 仅保留 ASCII 字母数字，其余归一为下划线，避免路径编码问题。
+        ascii_only = "".join(
+            ch.lower() if ch.isascii() and ch.isalnum() else "_"
+            for ch in window_title
+        )
+        ascii_only = re.sub(r"_+", "_", ascii_only).strip("_")
+
+        # 极端情况下（全中文标题）使用稳定哈希，保证目录可读且可追溯。
+        if not ascii_only:
+            digest = hashlib.sha1(window_title.encode("utf-8")).hexdigest()[:10]
+            return f"window_{digest}"
+
+        return ascii_only[:24]
 
     def _should_save_frame(self) -> bool:
         """判断当前帧是否达到落盘时机。"""
@@ -473,8 +567,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         image_path = self._capture_images_dir / filename
         image_rel_path = f"images/{filename}"
 
-        ok = cv2.imwrite(str(image_path), frame)
-        if not ok:
+        if not self._write_image_robust(image_path, frame):
             raise RuntimeError(f"图片写入失败: {image_path}")
 
         height = int(frame.shape[0]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
@@ -509,6 +602,25 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._samples.append(sample)
         self.timeline_panel.append_sample(sample)
         self.frame_strip.append_frame(image_rel_path)
+
+    def _write_image_robust(self, image_path: Path, frame: Any) -> bool:
+        """稳健写图：优先 imwrite，失败后使用 imencode+tofile 回退。"""
+        if not HAS_CV2:
+            return False
+
+        # 第一优先：常规写入。
+        if cv2.imwrite(str(image_path), frame):
+            return True
+
+        # 回退方案：兼容 Windows 上部分 OpenCV 构建对 Unicode 路径支持不足的情况。
+        try:
+            encoded_ok, encoded = cv2.imencode(".jpg", frame)
+            if not encoded_ok:
+                return False
+            encoded.tofile(str(image_path))
+            return True
+        except Exception:
+            return False
 
     def _on_range_changed(self, start_idx: int, end_idx: int) -> None:
         """同步导出参数区间。"""

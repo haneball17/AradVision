@@ -16,7 +16,7 @@ except ImportError:
     HAS_CV2 = False
     import numpy as np
 
-from PyQt5.QtWidgets import QLabel
+from PyQt5.QtWidgets import QLabel, QSizePolicy
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QImage, QPixmap, QPainter
 
@@ -33,19 +33,12 @@ class VideoPreviewWidget(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("VideoPreview")
 
-        # 固定尺寸
-        self.setFixedSize(640, 480)
+        # 保持可扩展，兼顾桌面与较小窗口。
+        self.setMinimumSize(640, 360)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
-
-        # 初始样式
-        self.setStyleSheet("""
-            VideoPreviewWidget {
-                border: 2px solid #555555;
-                background-color: #1E1E1E;
-                color: #888888;
-            }
-        """)
 
         # 显示占位符文本
         self.setPlaceholderText("等待系统启动...")

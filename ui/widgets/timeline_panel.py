@@ -26,12 +26,20 @@ class TimelinePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("TimelinePanel")
 
         self._samples: List[Dict[str, object]] = []
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        title = QLabel("时间线样本")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
 
         range_layout = QHBoxLayout()
+        range_layout.setSpacing(8)
         range_layout.addWidget(QLabel("起点 A:"))
         self.start_spin = QSpinBox()
         self.start_spin.setMinimum(0)
@@ -49,6 +57,8 @@ class TimelinePanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(self.table.SelectRows)
         self.table.setEditTriggers(self.table.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
         self.start_spin.valueChanged.connect(self._emit_range)

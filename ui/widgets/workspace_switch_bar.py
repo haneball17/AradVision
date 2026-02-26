@@ -5,7 +5,7 @@
 """
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QButtonGroup
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QButtonGroup, QLabel
 
 
 class WorkspaceSwitchBar(QWidget):
@@ -15,25 +15,36 @@ class WorkspaceSwitchBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("WorkspaceSwitchBar")
 
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        title = QLabel("工作区")
+        title.setObjectName("SubSectionTitle")
 
         self.capture_button = QPushButton("采集工作区")
+        self.capture_button.setObjectName("SegmentButton")
         self.capture_button.setCheckable(True)
         self.capture_button.setChecked(True)
         self.capture_button.clicked.connect(lambda: self.workspace_changed.emit("capture"))
 
         self.pseudo_button = QPushButton("预标注工作区")
+        self.pseudo_button.setObjectName("SegmentButton")
         self.pseudo_button.setCheckable(True)
         self.pseudo_button.clicked.connect(lambda: self.workspace_changed.emit("pseudo"))
+
+        self.capture_button.setMinimumHeight(34)
+        self.pseudo_button.setMinimumHeight(34)
 
         self._button_group.addButton(self.capture_button)
         self._button_group.addButton(self.pseudo_button)
 
+        layout.addWidget(title)
         layout.addWidget(self.capture_button)
         layout.addWidget(self.pseudo_button)
         layout.addStretch()
