@@ -7,9 +7,13 @@
 3. 批量场景修正
 """
 
-from typing import Dict, List
+from __future__ import annotations
 
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
+from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -23,6 +27,8 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
 )
 
+from ui.widgets.thumbnail_cache import ThumbnailCache
+
 
 class SampleGridPanel(QWidget):
     """样本网格主视图。"""
@@ -35,9 +41,16 @@ class SampleGridPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("SampleGridPanel")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(280)
 
         self._all_samples: List[Dict[str, object]] = []
         self._filtered_samples: List[Dict[str, object]] = []
+        self._image_path_resolver: Optional[Callable[[Dict[str, object]], Optional[str]]] = None
+        self._thumbnail_cache = ThumbnailCache(QSize(188, 106), max_items=1024)
+        self._thumbnail_cursor = 0
+        self._thumbnail_timer = QTimer(self)
+        self._thumbnail_timer.setInterval(0)
+        self._thumbnail_timer.timeout.connect(self._load_thumbnail_chunk)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -73,11 +86,11 @@ class SampleGridPanel(QWidget):
         self.grid_list.setResizeMode(QListWidget.Adjust)
         self.grid_list.setMovement(QListWidget.Static)
         self.grid_list.setWrapping(True)
-        self.grid_list.setSpacing(8)
+        self.grid_list.setSpacing(10)
         self.grid_list.setWordWrap(True)
         self.grid_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.grid_list.setIconSize(QSize(180, 96))
-        self.grid_list.setGridSize(QSize(210, 140))
+        self.grid_list.setIconSize(QSize(188, 106))
+        self.grid_list.setGridSize(QSize(220, 168))
         self.grid_list.setUniformItemSizes(False)
         layout.addWidget(self.grid_list, stretch=1)
 
@@ -85,6 +98,12 @@ class SampleGridPanel(QWidget):
         self.batch_apply_button.clicked.connect(self._on_batch_apply_clicked)
         self.grid_list.itemSelectionChanged.connect(self._on_selection_changed)
         self.grid_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+
+    def set_image_path_resolver(
+        self, resolver: Optional[Callable[[Dict[str, object]], Optional[str]]]
+    ) -> None:
+        """设置样本图像路径解析器。"""
+        self._image_path_resolver = resolver
 
     def set_samples(self, samples: List[Dict[str, object]]) -> None:
         """刷新全量样本。"""
@@ -107,16 +126,39 @@ class SampleGridPanel(QWidget):
 
     def _build_item_text(self, sample: Dict[str, object]) -> str:
         """构建网格卡片文本。"""
-        sample_id = str(sample.get("sample_id", "-"))
+        sample_id = str(sample.get("sample_id", "-"))[-14:]
         scene = str(sample.get("scene", "other"))
-        image_path = str(sample.get("image_rel_path", sample.get("image_path", "-")))
         ts = sample.get("timestamp_iso")
         if ts:
             ts_text = str(ts)[:19]
         else:
             ts_text = str(sample.get("timestamp_ms", "-"))
 
-        return f"{sample_id}\nscene: {scene}\n{ts_text}\n{image_path}"
+        return f"{scene}\n{ts_text}\n{sample_id}"
+
+    def _resolve_image_path(self, sample: Dict[str, object]) -> str:
+        """解析样本对应的图片路径。"""
+        if self._image_path_resolver is not None:
+            try:
+                resolved = self._image_path_resolver(sample)
+                if resolved:
+                    return str(resolved)
+            except Exception:
+                pass
+
+        candidates = [
+            sample.get("image_abs_path"),
+            sample.get("image_path"),
+            sample.get("image_rel_path"),
+        ]
+        for candidate in candidates:
+            text = str(candidate or "").strip()
+            if not text:
+                continue
+            path = Path(text)
+            if path.exists():
+                return str(path)
+        return ""
 
     def _apply_filter(self) -> None:
         """按搜索词过滤并刷新网格。"""
@@ -137,14 +179,44 @@ class SampleGridPanel(QWidget):
                     filtered.append(sample)
             self._filtered_samples = filtered
 
+        self._thumbnail_timer.stop()
+        self._thumbnail_cursor = 0
         self.grid_list.clear()
         for sample in self._filtered_samples:
             item = QListWidgetItem(self._build_item_text(sample))
             item.setData(Qt.UserRole, sample)
             item.setToolTip(self._build_item_text(sample))
+            image_path = self._resolve_image_path(sample)
+            item.setData(Qt.UserRole + 1, image_path)
+            item.setIcon(QIcon(self._thumbnail_cache.placeholder()))
             self.grid_list.addItem(item)
 
+        self._thumbnail_timer.start()
         self._on_selection_changed()
+
+    def _load_thumbnail_chunk(self) -> None:
+        """分块加载缩略图，避免大批样本一次性阻塞 UI。"""
+        total = self.grid_list.count()
+        if total <= 0:
+            self._thumbnail_timer.stop()
+            return
+
+        chunk_size = 18
+        loaded = 0
+        while self._thumbnail_cursor < total and loaded < chunk_size:
+            item = self.grid_list.item(self._thumbnail_cursor)
+            self._thumbnail_cursor += 1
+            if item is None:
+                continue
+            image_path = str(item.data(Qt.UserRole + 1) or "").strip()
+            if not image_path:
+                continue
+            pixmap = self._thumbnail_cache.get(image_path)
+            item.setIcon(QIcon(pixmap))
+            loaded += 1
+
+        if self._thumbnail_cursor >= total:
+            self._thumbnail_timer.stop()
 
     def _on_selection_changed(self) -> None:
         """更新选中计数并广播选中样本。"""

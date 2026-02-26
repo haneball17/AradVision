@@ -44,7 +44,9 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QPlainTextEdit,
     QLabel,
-    QDockWidget,
+    QPushButton,
+    QScrollArea,
+    QFrame,
     QMessageBox,
 )
 from PyQt5.QtCore import QSettings
@@ -65,7 +67,7 @@ from ui.widgets.workspace_switch_bar import WorkspaceSwitchBar
 class TimelineWorkbenchWindow(QMainWindow):
     """时间线工作台主窗口。"""
 
-    UI_LAYOUT_VERSION = 3
+    UI_LAYOUT_VERSION = 4
 
     def __init__(self):
         super().__init__()
@@ -112,20 +114,25 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._root_layout: QVBoxLayout
         self._top_layout: QVBoxLayout
         self._workspace_layout: QVBoxLayout
+        self._body_layout: QHBoxLayout
+        self._aux_layout: QVBoxLayout
         self._log_layout: QVBoxLayout
         self._session_layout: QVBoxLayout
         self._center_layout: QVBoxLayout
         self._export_layout: QVBoxLayout
         self._pseudo_layout: QVBoxLayout
         self._capture_content_splitter: QSplitter
-        self._center_vertical_splitter: QSplitter
-        self._timeline_aux_splitter: QSplitter
-        self._session_dock: QDockWidget
-        self._log_dock: QDockWidget
         self._responsive_mode: str = ""
         self._current_screen = None
         self._settings: QSettings = QSettings("AradVision", "TimelineWorkbench")
+        self._session_collapsed = True
+        self._log_collapsed = True
 
+        self._aux_sidebar: QWidget
+        self._session_content: QWidget
+        self._log_content: QWidget
+        self._session_toggle_button: QPushButton
+        self._log_toggle_button: QPushButton
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
         self.sample_grid_panel: SampleGridPanel
@@ -142,7 +149,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._connect_signals()
         self._initialize_empty_workspace()
         self._refresh_window_candidates()
-        self.apply_theme("light")
+        self.apply_theme("fluent_light")
         self._apply_responsive_layout(self.width(), force=True)
         self._on_workspace_changed("capture")
 
@@ -249,7 +256,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(8)
-        title_label = QLabel("数据采集时间线工作台")
+        title_label = QLabel("训练数据资产管理工作台")
         title_label.setObjectName("PageTitle")
         self._page_subtitle = QLabel("采集、筛选、导出与预标注统一入口")
         self._page_subtitle.setObjectName("PageSubtitle")
@@ -277,91 +284,103 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.workspace_stack.addWidget(self._build_capture_workspace())
         self.workspace_stack.addWidget(self._build_curation_workspace())
         self.workspace_stack.addWidget(self._build_pseudo_workspace())
-        root_layout.addWidget(workspace_card, stretch=1)
+        body_layout = QHBoxLayout()
+        self._body_layout = body_layout
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(16)
+        body_layout.addWidget(workspace_card, stretch=1)
+        body_layout.addWidget(self._build_right_sidebar(), stretch=0)
+        root_layout.addLayout(body_layout, stretch=1)
 
-        self._build_session_dock()
-        self._build_log_dock()
-        self._init_view_menu()
+    def _build_right_sidebar(self) -> QWidget:
+        """构建固定右侧辅助栏（会话列表 + 系统日志）。"""
+        sidebar = QWidget()
+        sidebar.setObjectName("AuxSidebarCard")
+        self._aux_sidebar = sidebar
+        sidebar.setMinimumWidth(300)
+        sidebar.setMaximumWidth(360)
 
-    def _build_session_dock(self) -> None:
-        """构建会话列表停靠面板。"""
-        self._session_dock = QDockWidget("会话列表", self)
-        self._session_dock.setObjectName("SessionDock")
-        self._session_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self._session_dock.setFeatures(
-            QDockWidget.DockWidgetClosable
-            | QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
+        layout = QVBoxLayout(sidebar)
+        self._aux_layout = layout
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
-        session_panel = QWidget()
-        session_panel.setObjectName("SessionPanel")
-        session_layout = QVBoxLayout(session_panel)
+        title = QLabel("辅助面板")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
+
+        session_block = QWidget()
+        session_block.setObjectName("SessionPanel")
+        session_layout = QVBoxLayout(session_block)
         self._session_layout = session_layout
-        session_layout.setContentsMargins(16, 16, 16, 16)
-        session_layout.setSpacing(10)
+        session_layout.setContentsMargins(0, 0, 0, 0)
+        session_layout.setSpacing(8)
 
-        session_title = QLabel("会话列表")
-        session_title.setObjectName("SectionTitle")
-        session_layout.addWidget(session_title)
+        self._session_toggle_button = QPushButton("会话列表（展开）")
+        self._session_toggle_button.setObjectName("GhostButton")
+        self._session_toggle_button.clicked.connect(
+            lambda: self._set_session_collapsed(not self._session_collapsed)
+        )
+        session_layout.addWidget(self._session_toggle_button)
 
+        self._session_content = QWidget()
+        session_content_layout = QVBoxLayout(self._session_content)
+        session_content_layout.setContentsMargins(0, 0, 0, 0)
+        session_content_layout.setSpacing(8)
         session_hint = QLabel("选择会话后可查看样本时间线")
         session_hint.setObjectName("HintText")
-        session_layout.addWidget(session_hint)
+        session_content_layout.addWidget(session_hint)
 
         self.session_list = QListWidget()
-        self.session_list.setMinimumWidth(180)
-        session_layout.addWidget(self.session_list, stretch=1)
+        self.session_list.setMinimumHeight(220)
+        session_content_layout.addWidget(self.session_list, stretch=1)
+        session_layout.addWidget(self._session_content)
+        layout.addWidget(session_block, stretch=1)
 
-        self._session_dock.setWidget(session_panel)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self._session_dock)
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFrameShadow(QFrame.Plain)
+        divider.setObjectName("LightDivider")
+        layout.addWidget(divider)
 
-    def _build_log_dock(self) -> None:
-        """构建系统日志停靠面板。"""
-        self._log_dock = QDockWidget("系统日志", self)
-        self._log_dock.setObjectName("LogDock")
-        self._log_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
-        self._log_dock.setFeatures(
-            QDockWidget.DockWidgetClosable
-            | QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
-
-        log_panel = QWidget()
-        log_panel.setObjectName("LogCard")
-        log_layout = QVBoxLayout(log_panel)
+        log_block = QWidget()
+        log_block.setObjectName("LogCard")
+        log_layout = QVBoxLayout(log_block)
         self._log_layout = log_layout
-        log_layout.setContentsMargins(16, 16, 16, 16)
+        log_layout.setContentsMargins(0, 0, 0, 0)
         log_layout.setSpacing(8)
 
-        log_title = QLabel("系统日志")
-        log_title.setObjectName("SectionTitle")
-        log_layout.addWidget(log_title)
+        self._log_toggle_button = QPushButton("系统日志（展开）")
+        self._log_toggle_button.setObjectName("GhostButton")
+        self._log_toggle_button.clicked.connect(lambda: self._set_log_collapsed(not self._log_collapsed))
+        log_layout.addWidget(self._log_toggle_button)
 
+        self._log_content = QWidget()
+        log_content_layout = QVBoxLayout(self._log_content)
+        log_content_layout.setContentsMargins(0, 0, 0, 0)
+        log_content_layout.setSpacing(8)
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumBlockCount(1000)
-        self.log_text.setMinimumHeight(80)
-        log_layout.addWidget(self.log_text)
+        self.log_text.setMinimumHeight(180)
+        log_content_layout.addWidget(self.log_text)
+        log_layout.addWidget(self._log_content)
+        layout.addWidget(log_block, stretch=2)
 
-        self._log_dock.setWidget(log_panel)
-        self.addDockWidget(Qt.BottomDockWidgetArea, self._log_dock)
+        layout.addStretch()
+        return sidebar
 
-    def _init_view_menu(self) -> None:
-        """初始化视图菜单，提供会话与日志面板开关。"""
-        view_menu = self.menuBar().addMenu("视图")
+    def _set_session_collapsed(self, collapsed: bool) -> None:
+        """切换会话列表折叠状态。"""
+        self._session_collapsed = collapsed
+        self._session_content.setVisible(not collapsed)
+        self._session_toggle_button.setText("会话列表（展开）" if collapsed else "会话列表（收起）")
 
-        session_toggle_action = self._session_dock.toggleViewAction()
-        session_toggle_action.setText("会话列表")
-        session_toggle_action.setShortcut("Alt+1")
-        session_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
-        view_menu.addAction(session_toggle_action)
-
-        log_toggle_action = self._log_dock.toggleViewAction()
-        log_toggle_action.setText("系统日志")
-        log_toggle_action.setShortcut("Alt+2")
-        log_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
-        view_menu.addAction(log_toggle_action)
+    def _set_log_collapsed(self, collapsed: bool) -> None:
+        """切换日志面板折叠状态。"""
+        self._log_collapsed = collapsed
+        self._log_content.setVisible(not collapsed)
+        self._log_toggle_button.setText("系统日志（展开）" if collapsed else "系统日志（收起）")
 
     def _load_runtime_config(self) -> None:
         """加载运行时配置。"""
@@ -425,41 +444,22 @@ class TimelineWorkbenchWindow(QMainWindow):
         center_layout.addWidget(center_title)
 
         self.sample_grid_panel = SampleGridPanel()
+        self.sample_grid_panel.set_image_path_resolver(self._resolve_sample_image_path_for_grid)
         self.timeline_panel = TimelinePanel()
         self.frame_strip = FrameStrip()
+        self.frame_strip.set_image_path_resolver(self._resolve_image_path_by_rel)
+        self.frame_strip.set_collapsed(True)
 
-        aux_container = QWidget()
-        aux_layout = QVBoxLayout(aux_container)
-        aux_layout.setContentsMargins(0, 0, 0, 0)
-        aux_layout.setSpacing(8)
-        aux_title = QLabel("时间线辅视图")
-        aux_title.setObjectName("SubSectionTitle")
-        aux_layout.addWidget(aux_title)
+        center_layout.addWidget(self.sample_grid_panel, stretch=6)
+        center_layout.addWidget(self.timeline_panel, stretch=2)
+        center_layout.addWidget(self.frame_strip, stretch=2)
 
-        self._timeline_aux_splitter = QSplitter(Qt.Vertical)
-        self._timeline_aux_splitter.setHandleWidth(6)
-        self._timeline_aux_splitter.setChildrenCollapsible(False)
-        self._timeline_aux_splitter.addWidget(self.timeline_panel)
-        self._timeline_aux_splitter.addWidget(self.frame_strip)
-        self._timeline_aux_splitter.setCollapsible(0, False)
-        self._timeline_aux_splitter.setCollapsible(1, True)
-        self._timeline_aux_splitter.setStretchFactor(0, 4)
-        self._timeline_aux_splitter.setStretchFactor(1, 1)
-        self._timeline_aux_splitter.setSizes([220, 90])
-        aux_layout.addWidget(self._timeline_aux_splitter, stretch=1)
-
-        self._center_vertical_splitter = QSplitter(Qt.Vertical)
-        self._center_vertical_splitter.setHandleWidth(8)
-        self._center_vertical_splitter.setChildrenCollapsible(False)
-        self._center_vertical_splitter.addWidget(self.sample_grid_panel)
-        self._center_vertical_splitter.addWidget(aux_container)
-        self._center_vertical_splitter.setCollapsible(0, False)
-        self._center_vertical_splitter.setCollapsible(1, False)
-        self._center_vertical_splitter.setStretchFactor(0, 3)
-        self._center_vertical_splitter.setStretchFactor(1, 2)
-        self._center_vertical_splitter.setSizes([360, 220])
-        center_layout.addWidget(self._center_vertical_splitter, stretch=1)
-        self._capture_content_splitter.addWidget(center_panel)
+        center_scroll = QScrollArea()
+        center_scroll.setWidgetResizable(True)
+        center_scroll.setFrameShape(QFrame.NoFrame)
+        center_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        center_scroll.setWidget(center_panel)
+        self._capture_content_splitter.addWidget(center_scroll)
 
         export_panel_card = QWidget()
         export_panel_card.setObjectName("ExportPanelCard")
@@ -473,7 +473,12 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.export_panel = ExportPanel()
         self.export_panel.setMinimumWidth(260)
         export_layout.addWidget(self.export_panel, stretch=1)
-        self._capture_content_splitter.addWidget(export_panel_card)
+        export_scroll = QScrollArea()
+        export_scroll.setWidgetResizable(True)
+        export_scroll.setFrameShape(QFrame.NoFrame)
+        export_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        export_scroll.setWidget(export_panel_card)
+        self._capture_content_splitter.addWidget(export_scroll)
         self._capture_content_splitter.setCollapsible(0, False)
         self._capture_content_splitter.setCollapsible(1, False)
         self._capture_content_splitter.setStretchFactor(0, 4)
@@ -556,87 +561,35 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._apply_responsive_layout(self.width(), force=True)
 
     def _restore_ui_state(self) -> None:
-        """恢复窗口与停靠面板状态。"""
+        """恢复窗口与辅助栏状态。"""
         geometry = self._settings.value("window/geometry")
-        state = self._settings.value("window/state")
         has_persisted = bool(self._settings.value("window/persisted", False, type=bool))
         layout_version = int(self._settings.value("window/layout_version", 0, type=int))
 
         if geometry is not None:
             self.restoreGeometry(geometry)
-        if state is not None:
-            self.restoreState(state)
 
         if has_persisted and layout_version >= self.UI_LAYOUT_VERSION:
-            session_visible = bool(
-                self._settings.value("dock/session_visible", False, type=bool)
+            session_collapsed = bool(
+                self._settings.value("sidebar/session_collapsed", True, type=bool)
             )
-            log_visible = bool(self._settings.value("dock/log_visible", False, type=bool))
-            self._session_dock.setVisible(session_visible)
-            self._log_dock.setVisible(log_visible)
+            log_collapsed = bool(
+                self._settings.value("sidebar/log_collapsed", True, type=bool)
+            )
+            self._set_session_collapsed(session_collapsed)
+            self._set_log_collapsed(log_collapsed)
         else:
-            # 首次启动默认折叠，需要时再展开。
-            self._session_dock.hide()
-            self._log_dock.hide()
+            self._set_session_collapsed(True)
+            self._set_log_collapsed(True)
 
     def _save_ui_state(self) -> None:
-        """保存窗口与停靠面板状态。"""
+        """保存窗口与辅助栏状态。"""
         self._settings.setValue("window/geometry", self.saveGeometry())
-        self._settings.setValue("window/state", self.saveState())
-        self._settings.setValue("dock/session_visible", self._session_dock.isVisible())
-        self._settings.setValue("dock/log_visible", self._log_dock.isVisible())
+        self._settings.setValue("sidebar/session_collapsed", self._session_collapsed)
+        self._settings.setValue("sidebar/log_collapsed", self._log_collapsed)
         self._settings.setValue("window/layout_version", self.UI_LAYOUT_VERSION)
         self._settings.setValue("window/persisted", True)
         self._settings.sync()
-
-    def _rebalance_center_splitter(self, mode: str, scale: float) -> None:
-        """按模式和缩放系数重算筛选区纵向布局，避免高缩放下时间线与样本流重叠。"""
-        grid_min = max(180, int(260 / scale))
-        timeline_min = max(120, int(200 / scale))
-        strip_min = max(64, int(110 / scale))
-
-        if mode == "default":
-            grid_min = max(grid_min, 240)
-            timeline_min = max(timeline_min, 200)
-            self.frame_strip.setMaximumHeight(220)
-        elif mode == "compact":
-            grid_min = max(grid_min, 210)
-            timeline_min = max(timeline_min, 170)
-            self.frame_strip.setMaximumHeight(170)
-        else:
-            grid_min = max(grid_min, 180)
-            timeline_min = max(timeline_min, 150)
-            self.frame_strip.setMaximumHeight(0)
-
-        frame_strip_visible = not self.frame_strip.isHidden()
-        self.sample_grid_panel.setMinimumHeight(grid_min)
-        self.timeline_panel.setMinimumHeight(timeline_min)
-        self.frame_strip.setMinimumHeight(strip_min if frame_strip_visible else 0)
-
-        aux_available = self._timeline_aux_splitter.size().height()
-        if aux_available <= 0:
-            aux_available = timeline_min + (strip_min if frame_strip_visible else 0) + 80
-        if not frame_strip_visible:
-            self._timeline_aux_splitter.setSizes([max(aux_available, timeline_min), 0])
-        else:
-            timeline_h = max(timeline_min, int(aux_available * 0.74))
-            strip_h = aux_available - timeline_h
-            if strip_h < strip_min:
-                strip_h = strip_min
-                timeline_h = max(timeline_min, aux_available - strip_h)
-            self._timeline_aux_splitter.setSizes([timeline_h, max(strip_h, strip_min)])
-
-        total_available = self._center_vertical_splitter.size().height()
-        if total_available <= 0:
-            total_available = grid_min + timeline_min + (strip_min if frame_strip_visible else 0) + 120
-
-        grid_h = max(grid_min, int(total_available * 0.62))
-        aux_h = total_available - grid_h
-        aux_min = timeline_min + (strip_min if frame_strip_visible else 0) // 2
-        if aux_h < aux_min:
-            aux_h = aux_min
-            grid_h = max(grid_min, total_available - aux_h)
-        self._center_vertical_splitter.setSizes([grid_h, max(aux_h, aux_min)])
 
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
@@ -675,7 +628,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.capture_control_bar.set_compact_mode(False)
             self.workspace_switch_bar.set_compact_mode(False)
             self._page_subtitle.setVisible(True)
-            self.frame_strip.set_collapsed(False)
+            self._aux_sidebar.setMinimumWidth(300)
+            self._aux_sidebar.setMaximumWidth(360)
+            self._body_layout.setSpacing(16)
+            self.sample_grid_panel.setMinimumHeight(300)
+            self.timeline_panel.setMinimumHeight(136)
+            self.frame_strip.set_force_collapsed(False)
         elif mode == "compact":
             outer_margin = 16
             card_padding = 14
@@ -688,7 +646,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
-            self.frame_strip.set_collapsed(False)
+            self._aux_sidebar.setMinimumWidth(280)
+            self._aux_sidebar.setMaximumWidth(320)
+            self._body_layout.setSpacing(12)
+            self.sample_grid_panel.setMinimumHeight(260)
+            self.timeline_panel.setMinimumHeight(124)
+            self.frame_strip.set_force_collapsed(False)
         else:
             outer_margin = 12
             card_padding = 10
@@ -701,7 +664,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
-            self.frame_strip.set_collapsed(True)
+            self._aux_sidebar.setMinimumWidth(260)
+            self._aux_sidebar.setMaximumWidth(300)
+            self._body_layout.setSpacing(10)
+            self.sample_grid_panel.setMinimumHeight(220)
+            self.timeline_panel.setMinimumHeight(112)
+            self.frame_strip.set_force_collapsed(True)
 
         self._root_layout.setContentsMargins(
             outer_margin, outer_margin, outer_margin, outer_margin
@@ -711,6 +679,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         for layout in (
             self._top_layout,
             self._workspace_layout,
+            self._aux_layout,
             self._log_layout,
             self._session_layout,
             self._center_layout,
@@ -719,8 +688,6 @@ class TimelineWorkbenchWindow(QMainWindow):
         ):
             layout.setContentsMargins(card_padding, card_padding, card_padding, card_padding)
             layout.setSpacing(section_spacing)
-
-        self._rebalance_center_splitter(mode, scale)
 
     def _connect_signals(self) -> None:
         """连接界面交互信号。"""
@@ -799,7 +766,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.capture_control_bar.set_window_options(titles, preferred)
         self._append_log(f"窗口列表已刷新，可选窗口数量: {len(titles)}")
 
-    def apply_theme(self, theme: str = "light") -> None:
+    def apply_theme(self, theme: str = "fluent_light") -> None:
         """应用 QSS 主题。"""
         theme_path = Path(__file__).parent / "themes" / f"{theme}.qss"
         if not theme_path.exists():
@@ -1613,6 +1580,38 @@ class TimelineWorkbenchWindow(QMainWindow):
         if rel_path.is_absolute() and rel_path.exists():
             return rel_path
 
+        return None
+
+    def _resolve_sample_image_path_for_grid(self, sample: Dict[str, object]) -> Optional[str]:
+        """供网格主视图使用的路径解析器。"""
+        resolved = self._resolve_source_image_path(sample)
+        if resolved is None:
+            return None
+        return str(resolved)
+
+    def _resolve_image_path_by_rel(self, image_rel_path: str) -> Optional[str]:
+        """供明细抽屉使用的相对路径解析器。"""
+        rel = str(image_rel_path).strip()
+        if not rel:
+            return None
+
+        current_session_path: Optional[Path] = None
+        if self._capture_session_dir is not None:
+            current_session_path = self._capture_session_dir / rel
+            if current_session_path.exists():
+                return str(current_session_path)
+
+        for sample in reversed(self._samples):
+            rel_path = str(sample.get("image_rel_path", "")).strip()
+            if rel_path != rel:
+                continue
+            resolved = self._resolve_source_image_path(sample)
+            if resolved is not None:
+                return str(resolved)
+
+        fallback = Path(rel)
+        if fallback.exists():
+            return str(fallback)
         return None
 
     def _resolve_unique_export_dir(self, output_root: Path, base_name: str) -> Path:
