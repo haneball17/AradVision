@@ -1,223 +1,85 @@
 # YOLO 训练数据资产管理工作台
-# 架构总纲 v2.1（数据策展 / 数据中心）
-**版本**: v2.1  
+# 架构总纲 v2.2（评估与优化版）
+**版本**: v2.2  
 **日期**: 2026-02-26  
-**定位**: 数据资产管理工作台（采集 + 数据策展 + 预标注 + 导出与复核）  
-**适用阶段**: 采集 → 筛选（策展）→ 预标注 → 复核 → 训练  
+**角色**: 架构与逻辑工程师（yangmq17）
 
-> v2.1 在 v2.0 基础上补齐：**数据策展最佳实践、状态模型、可审计导出、与伪标签闭环对齐**。  
-> 本文参考了开源数据策展工具 FiftyOne 的理念：通过 **可视化、过滤、标记、迭代** 提升数据质量与模型效果。 citeturn0search11turn0search7turn0search3
+## 0. 文档定位
+本文件用于给“采集-筛选-预标注-导出”全链路定架构边界、状态模型和实施顺序，目标是把工具从“时间线采样器”升级为“数据资产管理工作台”。
 
----
+## 1. 对 v2.1 的评估结论
+### 1.1 已有优势
+1. 明确了从“时间驱动”转向“状态驱动”的方向。
+2. 识别出数据策展（Data Curation）是核心价值点。
+3. 已引入 manifest 思维，具备可追溯基础。
 
-## 1. 背景与问题陈述
+### 1.2 关键缺口
+1. 数据契约粒度不足：样本、会话、导出、伪标签任务之间字段映射不完整。
+2. 状态机缺少“幂等与回滚”规则：失败重试后状态一致性风险高。
+3. 训练集划分策略未固化：存在时间泄漏/场景泄漏风险。
+4. 运行态与历史态没有统一索引：难以进行跨会话统计与复盘。
 
-v1.x 以“时间线区间抽样”为核心，适合“边采集边导出”。  
-但真实工作流更常见的是：
+## 2. 架构目标（v2.2）
+1. 用统一状态模型管理样本生命周期，而非临时目录操作。
+2. 导出必须可复现：任何导出可由 manifest 在新环境重建。
+3. 预标注必须版本化：同一批样本允许多版本模型重复推理和对比。
+4. 工具默认“主区优先”：低优先级面板支持折叠，不挤占策展主流程。
 
-> **先大量采集（100–5000 张）→ 再慢慢筛选（人眼 + 指标）→ 生成高质量子集 → 预标注 → 复核 → 训练。**
+## 3. 分层架构
+1. 表现层（UI Workbench）：流程导航、筛选视图、任务控制、日志与告警。
+2. 应用服务层（Use Cases）：采集编排、筛选编排、预标注编排、导出编排。
+3. 领域层（Domain）：样本状态机、筛选规则、导出策略、任务状态机。
+4. 基础设施层（Infra）：捕获后端、文件系统、配置中心、模型推理、序列化。
 
-因此 v2.x 需要把系统从“时间驱动工具”升级为：
-
-> **数据状态驱动的资产管理工作台**（数据策展 / Data Curation）。
-
----
-
-## 2. 核心理念（v2.x）
-
-### 2.1 从“区间”到“状态”
-- v1.x：时间区间 → 抽样 → 导出  
-- v2.x：样本状态 → 过滤/排序 → 标记 → 子集生成 → 预标注
-
-### 2.2 数据策展闭环
-借鉴数据中心（data-centric）的实践：通过筛选低质量样本、查找难例、管理标记与版本，持续提升训练集质量。 citeturn0search11turn0search7
-
----
-
-## 3. 顶层信息架构（IA）
-
-采用 **流程导航（Stepper）**：
+## 4. 样本状态模型
 ```text
-[1 采集] → [2 数据筛选/策展] → [3 预标注] → [4 导出与复核]
+raw -> auto_filtered -> curated -> selected -> pseudo_labeled -> reviewed -> train_ready
 ```
+- `raw`: 采集入库。
+- `auto_filtered`: 自动质量过滤完成（模糊/重复/异常）。
+- `curated`: 人工标记完成（star/reject/review）。
+- `selected`: 满足导出策略。
+- `pseudo_labeled`: 已绑定伪标签版本。
+- `reviewed`: 人工复核通过或修订。
+- `train_ready`: 通过格式与完整性校验。
 
-实现上仍可用 `QStackedWidget`，但认知结构必须是“流水线阶段”。
+## 5. 核心流程
+1. 采集：会话创建 -> 帧入库 -> 自动过滤 -> 写入 `samples.jsonl`。
+2. 筛选：基于过滤条件+标记规则形成“工作视图”（可保存）。
+3. 预标注：按视图子集触发任务，输出版本化标签与任务 manifest。
+4. 导出：按 flag/filter/selection 生成训练包并输出校验报告。
 
----
+## 6. 最小契约集合
+1. `samples.jsonl`：样本级事实表（时间、场景、质量、人工标记、伪标签摘要）。
+2. `session_manifest.json`：会话级配置快照（后端、阈值、分辨率、环境指纹）。
+3. `pseudo_task_manifest.json`：任务级状态（模型版本、阈值、输入集、失败摘要）。
+4. `selection_manifest.json`：导出级可复现说明（筛选条件、拆分策略、结果计数）。
 
-## 4. 数据模型与状态机
+## 7. 非功能约束
+1. 可复现：导出必须包含随机种子、筛选表达式、版本号。
+2. 可追溯：所有状态跃迁记录 `who/when/why`。
+3. 可恢复：导出与预标注采用临时目录事务提交，失败可清理或恢复。
+4. 可扩展：允许切换标注后端（CVAT/Label Studio）而不改领域模型。
 
-### 4.1 样本生命周期（Sample Lifecycle）
+## 8. 迁移建议（是否先回退）
+不建议先回退到“工具实现之前”。建议：
+1. 保留现有分支历史，新增 `refactor/data-workbench-v2` 分支实施重构。
+2. 采用“并行迁移”：旧入口保留，新增 v2 入口灰度验证。
+3. 通过 `git revert` 回滚单次有问题提交，不使用 `reset --hard` 破坏共享历史。
 
-```text
-raw
-  → auto_filtered         # 自动过滤（模糊/重复/异常）
-  → curated               # 人工策展已处理（manual_flag != none）
-  → selected              # 进入候选训练子集（由导出规则决定）
-  → pseudo_labeled        # 已生成伪标签（可选）
-  → reviewed              # 人工复核通过/修正
-  → train_ready           # 满足训练契约（格式校验通过）
-```
+## 9. 里程碑
+1. M1：完成契约与目录结构，跑通采集->筛选->导出最小闭环。
+2. M2：接入预标注任务编排与版本化输出。
+3. M3：完成训练前校验、统计报表、跨会话检索。
 
-### 4.2 最小新增字段（建议写入 samples.jsonl）
-```json
-{
-  "manual_flag": "none | star | reject | review",
-  "manual_updated_at": "ISO8601",
-  "pseudo_version": "v1.0",
-  "pseudo_obj_count": 3,
-  "pseudo_conf_mean": 0.72
-}
-```
-
-### 4.3 标记语义（Manual Flag）
-| 状态 | 含义 | 用途 |
-|---|---|---|
-| none | 未处理 | 默认 |
-| star | 高价值 | 优先进入训练子集 |
-| reject | 丢弃 | 不导出训练 |
-| review | 需复核 | 进入复核/难例队列 |
-
----
-
-## 5. 模块职责（清晰边界）
-
-### 5.1 采集模块（Data Ingestion）
-**职责：**
-- 捕获后端初始化、启动/暂停/停止
-- 自动采样、落盘
-- 自动质量过滤（模糊/重复）
-- 会话级元数据：`session_manifest.json`、`samples.jsonl`
-
-**不负责：**
-- 人工筛选、标记
-- 导出规则决策
-- 预标注任务编排
-
----
-
-### 5.2 数据筛选/策展模块（Data Curation）—— v2.x 核心
-借鉴 FiftyOne 等工具的典型能力：**过滤（filter）/ 标记（tag）/ 视图（view）/ 迭代（iterate）**。 citeturn0search11turn0search7turn0search3
-
-#### 5.2.1 默认主视图：网格（Thumbnail Grid）
-- 用于快速人眼判断
-- 支持多选、快捷键标记
-- 缩略图叠加“质量信号”：blur/diff/scene/objs/flag
-
-#### 5.2.2 辅助视图：时间线（Timeline）
-- 仅用于分析连续变化与异常片段
-- 不作为默认入口（避免“时间驱动”回归）
-
-#### 5.2.3 指标 + 视觉组合（典型筛选策略）
-- 先用指标缩小范围：清晰度阈值、差异度阈值、场景过滤
-- 再用视觉标记：⭐/❌/⚠
-- 最后导出：仅 ⭐ 或 ⭐+⚠
-
----
-
-### 5.3 预标注模块（Pseudo-label Orchestration）
-**输入不再是目录**，而是“集合视图”：
-- 对 ⭐ 样本运行
-- 对 ⚠ 样本运行
-- 对当前筛选结果运行
-- 对当前选中运行
-
-**输出必须版本化：**
-- `labels_pseudo/<version>/`
-- 伪标签 manifest 记录模型路径、阈值、生成时间、覆盖样本数等
-
----
-
-### 5.4 导出与复核模块（Export & Review）
-导出从“区间驱动”升级为“状态驱动”。
-
-导出模式：
-- by_flag：仅 ⭐ / ⭐+⚠
-- by_filter：当前筛选视图
-- manual_selection：当前选中集
-
-并强制输出：
-- `selection_manifest.json`（可复现导出）
-- `validation_report.json`（训练契约校验）
-
----
-
-## 6. Manifest 与可复现性（Auditability）
-
-### 6.1 session_manifest.json（会话级）
-建议字段：
-- capture backend、分辨率、窗口状态
-- 采样间隔、过滤开关与阈值（配置快照路径）
-- 场景分布、过滤原因分布
-- 实验/会话 ID（可复现）
-
-### 6.2 samples.jsonl（样本级主契约）
-每行一个样本，最小字段建议：
-- `timestamp` / `scene` / `backend` / `resolution`
-- `filtered` / `filter_reason`
-- `blur_score` / `similarity_to_prev`
-- `manual_flag` / `manual_updated_at`
-- 伪标签扩展字段（可选）
-
-### 6.3 selection_manifest.json（导出级）
-必须包含：
-- selection_mode（by_flag/by_filter/manual_selection）
-- 过滤条件快照（阈值/场景/排序）
-- flag 分布统计（star/reject/review/none）
-- split 策略与随机种子
-
----
-
-## 7. UI 关键交互（与架构一致）
-
-### 7.1 筛选页的“效率黄金三角”
-- 左侧：过滤器（理性）
-- 中间：网格缩略图（感性）
-- 底部：快捷键提示（动作）
-
-### 7.2 快捷键建议（默认）
-- `1` ⭐、`2` ❌、`3` ⚠、`0` 清除
-- `Ctrl+F` 搜索、`Ctrl+A` 全选、`Ctrl+E` 导出
-- `Space` 快速预览（可选）
-
----
-
-## 8. 伪标签闭环（P1/P2 演进建议）
-
-### 8.1 置信度分层（建议）
-- 高置信：直接进入“待复核快速通道”
-- 低置信：进入“⚠ review”队列（优先人工检查）
-
-### 8.2 难例挖掘（未来）
-数据策展工具常通过“低置信/冲突/异常尺寸”等信号发现难例；可在 P2 引入“困难样本列表”。 citeturn0search11turn0search7
-
----
-
-## 9. 成功标准（v2.x 验收）
-
-1. **1000 张样本**：在筛选页通过过滤+快捷键标记，**10 分钟内完成首轮策展**（星/弃/复核）。
-2. 导出流程无需创建多个中间目录；导出可通过 manifest 复现。
-3. 预标注可选择输入集合（⭐、⚠、当前筛选、选中集），并输出版本化结果。
-4. 训练契约校验通过（图片-标签配对、坐标范围、类别范围）。
-
----
-
-## 10. 风险与应对
-
-- **QSS 维护失控**：采用 token + 组件化 QSS 架构；全局一次性加载，避免散落 setStyleSheet。Qt 官方说明可在应用层级设置样式并级联推导。 citeturn0search4
-- **数据版本混乱**：强制 `selection_manifest.json` 与伪标签版本 manifest。
-- **筛选效率低**：默认网格视图 + 快捷键标记 + 指标过滤组合（而非时间线主导）。
-- **伪标签噪声高**：置信度分层 + review 队列 + 抽检策略。
-
----
-
-## 11. 附：与 v1.x 的核心变化摘要
-
-| 主题 | v1.x | v2.x |
-|---|---|---|
-| 核心视图 | 时间线 | 网格（主）+ 时间线（辅） |
-| 导出模式 | 区间驱动 | 状态驱动（flag/filter/selection） |
-| 数据管理 | 目录分散 | samples.jsonl 统一状态 |
-| 预标注输入 | 目录 | 集合视图（⭐/⚠/筛选/选中） |
-| 可追溯 | 部分 | 全链路 manifest |
-
+## 10. 参考资料
+1. FiftyOne Dataset Views: https://docs.voxel51.com/user_guide/using_views.html
+2. FiftyOne App: https://docs.voxel51.com/user_guide/app.html
+3. Label Studio Data Manager: https://labelstud.io/guide/manage_data
+4. Label Studio Predictions: https://labelstud.io/guide/predictions
+5. CVAT Dataset Management: https://docs.cvat.ai/docs/dataset_management/
+6. CVAT Ultralytics YOLO Format: https://docs.cvat.ai/docs/dataset_management/formats/format-yolo-ultralytics/
+7. Ultralytics Detect Datasets: https://docs.ultralytics.com/datasets/detect/
+8. DVC Versioning Data and Models: https://doc.dvc.org/use-cases/versioning-data-and-models
+9. Qt QMainWindow: https://doc.qt.io/qt-6/qmainwindow.html
+10. Qt QDockWidget: https://doc.qt.io/qt-6/qdockwidget.html
