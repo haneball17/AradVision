@@ -14,10 +14,12 @@ import json
 import time
 import re
 import hashlib
+import os
+import shutil
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # 可选导入 cv2，用于落盘
 try:
@@ -86,6 +88,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_session_dir: Optional[Path] = None
         self._capture_images_dir: Optional[Path] = None
         self._capture_meta_file: Optional[Path] = None
+        self._capture_session_manifest_file: Optional[Path] = None
+        self._capture_prev_saved_frame: Optional[Any] = None
+        self._capture_prev_saved_timestamp_ms: Optional[int] = None
+        self._capture_expected_interval_ms = int(self._capture_save_interval_sec * 1000)
+        self._capture_window_title: str = ""
+        self._capture_active_backend: str = "unknown"
+        self._capture_started_at: str = ""
+        self._capture_stats: Dict[str, int] = {}
         self._using_demo_data = True
 
         self._task_timer = QTimer(self)
@@ -156,10 +166,62 @@ class TimelineWorkbenchWindow(QMainWindow):
         if screen is None:
             return 1.0
 
+        scale_candidates: List[float] = []
+
         logical_dpi = float(screen.logicalDotsPerInch())
-        if logical_dpi <= 0:
-            return 1.0
-        return max(1.0, logical_dpi / 96.0)
+        if logical_dpi > 0:
+            scale_candidates.append(logical_dpi / 96.0)
+
+        try:
+            dpr = float(screen.devicePixelRatio())
+            if dpr > 0:
+                scale_candidates.append(dpr)
+        except Exception:
+            pass
+
+        scale = max(scale_candidates) if scale_candidates else 1.0
+
+        # 在部分 Windows 环境中，Qt 可能返回 96 DPI，这里增加 WinAPI 兜底。
+        if platform.system().lower() == "windows" and scale < 1.2:
+            win_scale = self._get_windows_scale_fallback()
+            if win_scale is not None:
+                scale = max(scale, win_scale)
+
+        return max(1.0, scale)
+
+    def _get_windows_scale_fallback(self) -> Optional[float]:
+        """通过 WinAPI 获取窗口 DPI，作为 Qt DPI 的兜底来源。"""
+        try:
+            import ctypes  # Windows 专用，按需导入避免跨平台告警。
+        except Exception:
+            return None
+
+        user32 = getattr(ctypes, "windll", None)
+        if user32 is None:
+            return None
+        user32 = user32.user32
+        if user32 is None:
+            return None
+
+        hwnd = int(self.winId()) if self.winId() else 0
+        dpi = 0
+
+        try:
+            if hwnd and hasattr(user32, "GetDpiForWindow"):
+                dpi = int(user32.GetDpiForWindow(hwnd))
+        except Exception:
+            dpi = 0
+
+        if dpi <= 0:
+            try:
+                if hasattr(user32, "GetDpiForSystem"):
+                    dpi = int(user32.GetDpiForSystem())
+            except Exception:
+                dpi = 0
+
+        if dpi <= 0:
+            return None
+        return float(dpi) / 96.0
 
     def _init_ui(self) -> None:
         """初始化主界面结构。"""
@@ -652,12 +714,19 @@ class TimelineWorkbenchWindow(QMainWindow):
         for idx in range(240):
             ts = base_time + timedelta(seconds=idx)
             scene = scenes[idx % len(scenes)]
+            ts_ms = int(ts.timestamp() * 1000)
             self._samples.append(
                 {
                     "sample_id": f"sample_{idx:06d}",
+                    "timestamp_ms": ts_ms,
                     "timestamp_iso": ts.isoformat() + "Z",
                     "scene": scene,
                     "image_rel_path": f"images/{scene}_{idx:06d}.jpg",
+                    "state": "raw",
+                    "manual_flag": "none",
+                    "filtered": False,
+                    "filter_reason": "",
+                    "source_session": "demo_session",
                 }
             )
 
@@ -743,6 +812,7 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         capture_cfg = replace(self._config.capture)
         capture_cfg.window_title = window_title
+        self._capture_window_title = window_title
 
         if self.capture_control_bar.pause_button.isChecked():
             self.capture_control_bar.pause_button.blockSignals(True)
@@ -766,9 +836,11 @@ class TimelineWorkbenchWindow(QMainWindow):
             self._capture_error_streak = 0
             fps = max(int(capture_cfg.target_fps), 1)
             self._capture_timer_interval_ms = max(10, int(1000 / fps))
+            self._capture_expected_interval_ms = int(self._capture_save_interval_sec * 1000)
             self._capture_timer.start(self._capture_timer_interval_ms)
 
             active_backend = getattr(engine, "active_backend", "unknown")
+            self._capture_active_backend = str(active_backend)
             self.capture_control_bar.set_status(f"采集中({active_backend})")
             self._append_log(
                 "采集已启动: "
@@ -779,9 +851,10 @@ class TimelineWorkbenchWindow(QMainWindow):
         except Exception as exc:
             self.capture_control_bar.set_status("异常")
             self._capture_engine = None
+            self._capture_active_backend = "unknown"
             self._append_log(f"采集启动失败: {exc}")
 
-    def _on_capture_stop(self) -> None:
+    def _on_capture_stop(self, error_summary: str = "") -> None:
         """响应采集停止。"""
         self._capture_timer.stop()
         if self._capture_engine is not None:
@@ -799,8 +872,13 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.capture_control_bar.pause_button.blockSignals(False)
 
         self.capture_control_bar.set_status("空闲")
+        self._write_capture_session_manifest(
+            status="stopped" if not error_summary else "error",
+            error_summary=error_summary,
+        )
         self._append_log("采集已停止。")
         self.video_preview.clear_frame()
+        self._capture_active_backend = "unknown"
 
     def _on_capture_pause_toggled(self, paused: bool) -> None:
         """响应采集暂停切换。"""
@@ -832,6 +910,7 @@ class TimelineWorkbenchWindow(QMainWindow):
 
             self.video_preview.update_frame(frame)
             self._capture_frame_count += 1
+            self._capture_stats["captured"] = self._capture_frame_count
 
             if self._should_save_frame():
                 self._save_capture_frame(frame)
@@ -846,6 +925,8 @@ class TimelineWorkbenchWindow(QMainWindow):
                     f"frames={stats.frame_count}, fps={stats.fps:.1f}, "
                     f"latency={stats.avg_latency:.1f}ms, shape={shape}"
                 )
+            if self._capture_frame_count % 60 == 0:
+                self._write_capture_session_manifest(status="running", error_summary="")
         except Exception as exc:
             self._capture_error_streak += 1
             if self._capture_error_streak == 1 or self._capture_error_streak % 5 == 0:
@@ -855,7 +936,7 @@ class TimelineWorkbenchWindow(QMainWindow):
 
             if self._capture_error_streak >= 10:
                 self._append_log("连续取帧失败过多，已自动停止采集。")
-                self._on_capture_stop()
+                self._on_capture_stop(error_summary="连续取帧失败过多，自动停止")
 
     def _prepare_capture_session(self, window_title: str) -> None:
         """初始化本次采集会话目录与元数据文件。"""
@@ -865,17 +946,29 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self._capture_session_dir = Path("assets/images/raw") / self._capture_session_name
         self._capture_images_dir = self._capture_session_dir / "images"
-        meta_dir = self._capture_session_dir / "meta"
-        self._capture_meta_file = meta_dir / "samples.jsonl"
+        self._capture_meta_file = self._capture_session_dir / "samples.jsonl"
+        self._capture_session_manifest_file = self._capture_session_dir / "session_manifest.json"
 
         self._capture_images_dir.mkdir(parents=True, exist_ok=True)
-        meta_dir.mkdir(parents=True, exist_ok=True)
+        self._capture_session_dir.mkdir(parents=True, exist_ok=True)
 
         self._capture_saved_count = 0
         self._capture_last_save_time = 0.0
+        self._capture_prev_saved_frame = None
+        self._capture_prev_saved_timestamp_ms = None
+        self._capture_active_backend = "unknown"
+        self._capture_started_at = self._iso_utc_now()
+        self._capture_stats = {
+            "captured": 0,
+            "saved": 0,
+            "filtered_blur": 0,
+            "filtered_duplicate": 0,
+            "write_failures": 0,
+        }
 
         if self._capture_meta_file.exists():
             self._capture_meta_file.unlink()
+        self._write_capture_session_manifest(status="running", error_summary="")
 
     def _build_ascii_window_tag(self, window_title: str) -> str:
         """构建仅含 ASCII 的窗口标识，避免 Windows 落盘路径兼容问题。"""
@@ -892,6 +985,110 @@ class TimelineWorkbenchWindow(QMainWindow):
             return f"window_{digest}"
 
         return ascii_only[:24]
+
+    def _iso_utc_now(self) -> str:
+        """返回 UTC ISO8601 时间戳（毫秒）。"""
+        return datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+
+    def _write_capture_session_manifest(self, status: str, error_summary: str) -> None:
+        """写入会话级 manifest，记录采集配置和统计信息。"""
+        if self._capture_session_manifest_file is None:
+            return
+
+        cfg = self._config.capture
+        manifest = {
+            "schema_version": "v2.2",
+            "session_id": self._capture_session_name,
+            "created_at": self._capture_started_at or self._iso_utc_now(),
+            "updated_at": self._iso_utc_now(),
+            "status": status,
+            "error_summary": error_summary,
+            "backend": {
+                "requested": cfg.backend,
+                "active": self._capture_active_backend or getattr(
+                    self._capture_engine, "active_backend", cfg.backend
+                ),
+                "allow_fallback": bool(cfg.allow_fallback),
+            },
+            "window": {
+                "title": self._capture_window_title,
+                "state": self._detect_window_state(self._capture_window_title),
+            },
+            "resolution": {"width": int(cfg.width), "height": int(cfg.height)},
+            "sampling": {
+                "target_fps": int(cfg.target_fps),
+                "save_interval_sec": float(self._capture_save_interval_sec),
+                "expected_interval_ms": int(self._capture_expected_interval_ms),
+            },
+            "stats": self._capture_stats,
+        }
+
+        try:
+            self._capture_session_manifest_file.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            self._append_log(f"写入 session_manifest 失败: {exc}")
+
+    def _detect_window_state(self, window_title: str) -> str:
+        """检测目标窗口状态（foreground/background/minimized/unknown）。"""
+        if platform.system().lower() != "windows" or not window_title:
+            return "unknown"
+
+        try:
+            import win32gui  # type: ignore
+        except Exception:
+            return "unknown"
+
+        target_title = window_title.strip().lower()
+        target_hwnd: Optional[int] = None
+
+        def enum_windows_callback(hwnd: int, _param: object) -> bool:
+            nonlocal target_hwnd
+            if target_hwnd is not None:
+                return False
+            if not win32gui.IsWindowVisible(hwnd):
+                return True
+            title = win32gui.GetWindowText(hwnd).strip().lower()
+            if target_title and target_title in title:
+                target_hwnd = hwnd
+                return False
+            return True
+
+        try:
+            win32gui.EnumWindows(enum_windows_callback, None)
+            if target_hwnd is None:
+                return "unknown"
+            if win32gui.IsIconic(target_hwnd):
+                return "minimized"
+            foreground = win32gui.GetForegroundWindow()
+            return "foreground" if foreground == target_hwnd else "background"
+        except Exception:
+            return "unknown"
+
+    def _compute_quality_scores(self, frame: Any) -> Tuple[float, float]:
+        """计算基础质量分：模糊度与与上一帧的 MSE 差异。"""
+        blur_score = -1.0
+        dup_mse = -1.0
+
+        if HAS_CV2:
+            try:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            except Exception:
+                blur_score = -1.0
+
+        prev = self._capture_prev_saved_frame
+        if prev is not None and hasattr(frame, "shape") and hasattr(prev, "shape"):
+            try:
+                if frame.shape == prev.shape:
+                    diff = frame.astype("float32") - prev.astype("float32")
+                    dup_mse = float((diff * diff).mean())
+            except Exception:
+                dup_mse = -1.0
+
+        return blur_score, dup_mse
 
     def _should_save_frame(self) -> bool:
         """判断当前帧是否达到落盘时机。"""
@@ -917,33 +1114,67 @@ class TimelineWorkbenchWindow(QMainWindow):
         timestamp = datetime.utcnow()
         timestamp_iso = timestamp.isoformat(timespec="milliseconds") + "Z"
         timestamp_ms = int(timestamp.timestamp() * 1000)
+        actual_interval_ms = -1
+        if self._capture_prev_saved_timestamp_ms is not None:
+            actual_interval_ms = max(timestamp_ms - self._capture_prev_saved_timestamp_ms, 0)
 
         filename = f"frame_{self._capture_saved_count:06d}.jpg"
         image_path = self._capture_images_dir / filename
         image_rel_path = f"images/{filename}"
 
         if not self._write_image_robust(image_path, frame):
+            self._capture_stats["write_failures"] = self._capture_stats.get("write_failures", 0) + 1
             raise RuntimeError(f"图片写入失败: {image_path}")
 
         height = int(frame.shape[0]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
         width = int(frame.shape[1]) if hasattr(frame, "shape") and len(frame.shape) >= 2 else 0
+        blur_score, dup_mse = self._compute_quality_scores(frame)
+
+        # 首版使用保守阈值，仅用于标记，不直接丢弃样本。
+        blur_threshold = 30.0
+        duplicate_threshold = 1.0
+        filtered = False
+        filter_reason = ""
+        if blur_score >= 0 and blur_score < blur_threshold:
+            filtered = True
+            filter_reason = "blur"
+            self._capture_stats["filtered_blur"] = self._capture_stats.get("filtered_blur", 0) + 1
+        elif dup_mse >= 0 and dup_mse < duplicate_threshold:
+            filtered = True
+            filter_reason = "duplicate"
+            self._capture_stats["filtered_duplicate"] = (
+                self._capture_stats.get("filtered_duplicate", 0) + 1
+            )
 
         sample = {
             "sample_id": f"{self._capture_session_name}_{self._capture_saved_count:06d}",
             "timestamp_ms": timestamp_ms,
             "timestamp_iso": timestamp_iso,
             "image_rel_path": image_rel_path,
+            "image_path": image_rel_path,
             "scene": "other",
+            "state": "auto_filtered" if filtered else "raw",
             "backend": getattr(self._capture_engine, "active_backend", "unknown"),
+            "window_state": self._detect_window_state(self._capture_window_title),
             "width": width,
             "height": height,
-            "filtered": False,
+            "actual_interval_ms": actual_interval_ms,
+            "expected_interval_ms": self._capture_expected_interval_ms,
+            "quality": {"blur_score": blur_score, "dup_mse_to_prev": dup_mse},
+            "manual_flag": "none",
+            "source_session": self._capture_session_name,
+            "source_image_path": str(image_path),
+            "filtered": filtered,
+            "filter_reason": filter_reason,
         }
 
         with self._capture_meta_file.open("a", encoding="utf-8") as fp:
             fp.write(json.dumps(sample, ensure_ascii=False) + "\n")
 
         self._capture_saved_count += 1
+        self._capture_stats["saved"] = self._capture_saved_count
+        self._capture_prev_saved_timestamp_ms = timestamp_ms
+        self._capture_prev_saved_frame = frame.copy() if hasattr(frame, "copy") else frame
 
         if self._using_demo_data:
             self._using_demo_data = False
@@ -991,14 +1222,518 @@ class TimelineWorkbenchWindow(QMainWindow):
 
     def _on_export_requested(self, payload: Dict[str, object]) -> None:
         """处理导出请求。"""
-        start_idx = int(payload.get("start_index", 0))
-        end_idx = int(payload.get("end_index", 0))
-        interval_sec = int(payload.get("interval_sec", 1))
-        output_dir = str(payload.get("output_dir", "assets/images/selected"))
+        if not self._samples:
+            self._append_log("导出失败：当前没有可导出的样本。")
+            return
+
+        start_idx = max(0, int(payload.get("start_index", 0)))
+        end_idx = max(0, int(payload.get("end_index", 0)))
+        interval_sec = max(1, int(payload.get("interval_sec", 1)))
+        output_dir = str(payload.get("output_dir", "assets/images/selected")).strip()
+        if not output_dir:
+            output_dir = "assets/images/selected"
 
         self._append_log(
             f"收到导出请求: 区间={start_idx}-{end_idx}, 频率={interval_sec}s, 输出={output_dir}"
         )
+
+        try:
+            selected_samples, selection_manifest = self._build_selection_manifest(
+                start_idx=start_idx,
+                end_idx=end_idx,
+                interval_sec=interval_sec,
+            )
+            if not selected_samples:
+                self._append_log("导出取消：筛选结果为空。")
+                return
+
+            export_summary = self._export_selected_samples(
+                selected_samples=selected_samples,
+                selection_manifest=selection_manifest,
+                output_dir=output_dir,
+            )
+            self._append_log(
+                "导出完成: "
+                f"export_id={export_summary.get('export_id', '-')}, "
+                f"output={export_summary.get('output_dir', '-')}, "
+                f"total={export_summary.get('total', 0)}, "
+                f"missing={export_summary.get('missing', 0)}"
+            )
+        except Exception as exc:
+            self._append_log(f"导出失败: {exc}")
+
+    def _sample_timestamp_ms(self, sample: Dict[str, object], fallback_ms: int) -> int:
+        """提取样本毫秒时间戳，缺失时回落到调用方提供的默认值。"""
+        ts = sample.get("timestamp_ms")
+        if isinstance(ts, (int, float)):
+            return int(ts)
+
+        iso = str(sample.get("timestamp_iso", "")).strip()
+        if iso:
+            try:
+                dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                return int(dt.timestamp() * 1000)
+            except Exception:
+                pass
+        return fallback_ms
+
+    def _build_selection_manifest(
+        self,
+        start_idx: int,
+        end_idx: int,
+        interval_sec: int,
+    ) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
+        """按闭区间和时间桶规则生成导出选择集与 selection manifest。"""
+        if not self._samples:
+            return [], {}
+
+        lo = max(0, min(start_idx, end_idx))
+        hi = min(max(start_idx, end_idx), len(self._samples) - 1)
+        if lo > hi:
+            return [], {}
+
+        interval_ms = max(1, interval_sec) * 1000
+        candidates: List[Dict[str, object]] = []
+        source_sessions = set()
+
+        base_fallback = int(time.time() * 1000)
+        for idx in range(lo, hi + 1):
+            sample = self._samples[idx]
+            manual_flag = str(sample.get("manual_flag", "none")).strip().lower() or "none"
+            if manual_flag == "reject":
+                continue
+
+            ts_ms = self._sample_timestamp_ms(sample, fallback_ms=base_fallback + idx * 1000)
+            enriched = dict(sample)
+            enriched["timestamp_ms"] = ts_ms
+            enriched["manual_flag"] = manual_flag
+            enriched["sample_id"] = str(
+                enriched.get("sample_id", f"sample_{idx:06d}")
+            )
+            source_session = str(
+                enriched.get("source_session", self._capture_session_name or "unknown_session")
+            )
+            enriched["source_session"] = source_session
+            candidates.append(enriched)
+            source_sessions.add(source_session)
+
+        candidates.sort(key=lambda item: int(item.get("timestamp_ms", 0)))
+        if not candidates:
+            return [], {}
+
+        start_ms = int(candidates[0]["timestamp_ms"])
+        end_ms = int(candidates[-1]["timestamp_ms"])
+        bucket_start = start_ms
+        pointer = 0
+        missed_buckets = 0
+        selected: List[Dict[str, object]] = []
+
+        while bucket_start <= end_ms:
+            bucket_end = bucket_start + interval_ms
+            bucket_items: List[Dict[str, object]] = []
+
+            while pointer < len(candidates):
+                ts_ms = int(candidates[pointer]["timestamp_ms"])
+                if ts_ms < bucket_start:
+                    pointer += 1
+                    continue
+                if ts_ms >= bucket_end:
+                    break
+                bucket_items.append(candidates[pointer])
+                pointer += 1
+
+            if not bucket_items:
+                missed_buckets += 1
+                bucket_start += interval_ms
+                continue
+
+            bucket_center = bucket_start + interval_ms // 2
+            best = min(
+                bucket_items,
+                key=lambda item: (
+                    abs(int(item.get("timestamp_ms", 0)) - bucket_center),
+                    int(item.get("timestamp_ms", 0)),
+                    str(item.get("sample_id", "")),
+                ),
+            )
+            selected.append(best)
+            bucket_start += interval_ms
+
+        selection_id = f"sel_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        manual_counter = {"star": 0, "review": 0, "reject": 0, "none": 0}
+        for sample in selected:
+            flag = str(sample.get("manual_flag", "none")).strip().lower() or "none"
+            manual_counter[flag] = manual_counter.get(flag, 0) + 1
+
+        selection_manifest: Dict[str, object] = {
+            "schema_version": "v2.2",
+            "selection_id": selection_id,
+            "created_at": self._iso_utc_now(),
+            "source_sessions": sorted(source_sessions),
+            "range": {"start_ms": start_ms, "end_ms": end_ms, "inclusive": True},
+            "sampling": {
+                "mode": "bucket_nearest",
+                "frequency_sec": interval_sec,
+                "missing_bucket_policy": "skip",
+                "tie_breaker": "timestamp_then_sample_id",
+                "missed_buckets": missed_buckets,
+            },
+            "filters": {"manual_flag_not_in": ["reject"]},
+            "result": {
+                "total": len(selected),
+                "star": manual_counter.get("star", 0),
+                "review": manual_counter.get("review", 0),
+                "reject": manual_counter.get("reject", 0),
+                "none": manual_counter.get("none", 0),
+            },
+        }
+        return selected, selection_manifest
+
+    def _resolve_source_image_path(self, sample: Dict[str, object]) -> Optional[Path]:
+        """解析样本来源图片绝对路径。"""
+        direct = str(sample.get("source_image_path", "")).strip()
+        if direct:
+            path = Path(direct)
+            if path.exists():
+                return path
+
+        image_rel = str(sample.get("image_rel_path", sample.get("image_path", ""))).strip()
+        if not image_rel:
+            return None
+
+        if self._capture_session_dir is not None:
+            current_path = self._capture_session_dir / image_rel
+            if current_path.exists():
+                return current_path
+
+        source_session = str(sample.get("source_session", "")).strip()
+        if source_session:
+            session_path = Path("assets/images/raw") / source_session / image_rel
+            if session_path.exists():
+                return session_path
+
+        rel_path = Path(image_rel)
+        if rel_path.is_absolute() and rel_path.exists():
+            return rel_path
+
+        return None
+
+    def _resolve_unique_export_dir(self, output_root: Path, base_name: str) -> Path:
+        """解决导出目录冲突，已存在时自动追加版本后缀。"""
+        target = output_root / base_name
+        if not target.exists():
+            return target
+        idx = 2
+        while True:
+            candidate = output_root / f"{base_name}_v{idx}"
+            if not candidate.exists():
+                return candidate
+            idx += 1
+
+    def _materialize_image(self, source: Path, target: Path) -> str:
+        """优先硬链接，失败后回退复制。"""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(str(source), str(target))
+            return "hardlink"
+        except Exception:
+            shutil.copy2(str(source), str(target))
+            return "copy"
+
+    def _assign_split_by_session(
+        self,
+        samples: List[Dict[str, object]],
+    ) -> Tuple[Dict[str, str], Dict[str, int], Dict[str, float]]:
+        """按会话分配数据子集，确保同会话不跨集合。"""
+        split_ratio = {"train": 0.8, "val": 0.15, "test": 0.05}
+        total = len(samples)
+        split_targets = {
+            "train": int(total * split_ratio["train"]),
+            "val": int(total * split_ratio["val"]),
+        }
+        split_targets["test"] = max(total - split_targets["train"] - split_targets["val"], 0)
+
+        sessions: Dict[str, List[Dict[str, object]]] = {}
+        for sample in samples:
+            session = str(sample.get("source_session", self._capture_session_name or "unknown_session"))
+            sessions.setdefault(session, []).append(sample)
+
+        assignments: Dict[str, str] = {}
+        split_counts = {"train": 0, "val": 0, "test": 0}
+
+        if len(sessions) <= 1:
+            for sample in samples:
+                assignments[str(sample.get("sample_id", ""))] = "train"
+            split_counts["train"] = len(samples)
+            return assignments, split_counts, split_ratio
+
+        session_items = sorted(sessions.items(), key=lambda item: len(item[1]), reverse=True)
+        for _, grouped_samples in session_items:
+            preferred = max(
+                ("train", "val", "test"),
+                key=lambda split: split_targets.get(split, 0) - split_counts.get(split, 0),
+            )
+            if split_targets.get(preferred, 0) - split_counts.get(preferred, 0) <= 0:
+                preferred = "train"
+
+            for sample in grouped_samples:
+                assignments[str(sample.get("sample_id", ""))] = preferred
+            split_counts[preferred] += len(grouped_samples)
+
+        return assignments, split_counts, split_ratio
+
+    def _build_validation_report(
+        self,
+        export_dir: Path,
+        split_counts: Dict[str, int],
+        missing_sources: int,
+        failed_items: List[Dict[str, object]],
+    ) -> Dict[str, object]:
+        """构建导出结果校验报告。"""
+        class_count = 3
+        total_images = 0
+        total_labels = 0
+        missing_labels = 0
+        malformed_labels = 0
+        invalid_class = 0
+        invalid_bbox = 0
+
+        for split in ("train", "val", "test"):
+            image_dir = export_dir / "images" / split
+            label_dir = export_dir / "labels" / split
+            image_files = sorted(image_dir.glob("*.*"))
+            total_images += len(image_files)
+            for image_file in image_files:
+                label_file = label_dir / f"{image_file.stem}.txt"
+                if not label_file.exists():
+                    missing_labels += 1
+                    continue
+                total_labels += 1
+                try:
+                    lines = label_file.read_text(encoding="utf-8").splitlines()
+                except Exception:
+                    malformed_labels += 1
+                    continue
+
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    if len(parts) != 5:
+                        malformed_labels += 1
+                        continue
+                    try:
+                        class_id = int(parts[0])
+                        xc, yc, w, h = map(float, parts[1:])
+                    except Exception:
+                        malformed_labels += 1
+                        continue
+
+                    if class_id < 0 or class_id >= class_count:
+                        invalid_class += 1
+                    if (
+                        xc < 0
+                        or xc > 1
+                        or yc < 0
+                        or yc > 1
+                        or w <= 0
+                        or w > 1
+                        or h <= 0
+                        or h > 1
+                    ):
+                        invalid_bbox += 1
+
+        blocking_errors: List[str] = []
+        if malformed_labels > 0:
+            blocking_errors.append("存在标签格式错误")
+        if invalid_class > 0:
+            blocking_errors.append("存在非法类别ID")
+        if invalid_bbox > 0:
+            blocking_errors.append("存在非法边界框坐标")
+
+        return {
+            "schema_version": "v2.2",
+            "created_at": self._iso_utc_now(),
+            "status": "pass" if not blocking_errors else "fail",
+            "summary": {
+                "total_images": total_images,
+                "total_labels": total_labels,
+                "missing_labels": missing_labels,
+                "missing_sources": missing_sources,
+                "malformed_labels": malformed_labels,
+                "invalid_class_id": invalid_class,
+                "invalid_bbox": invalid_bbox,
+            },
+            "split_counts": split_counts,
+            "failed_items": failed_items,
+            "blocking_errors": blocking_errors,
+        }
+
+    def _export_selected_samples(
+        self,
+        selected_samples: List[Dict[str, object]],
+        selection_manifest: Dict[str, object],
+        output_dir: str,
+    ) -> Dict[str, object]:
+        """将选择集事务化导出为可训练目录结构。"""
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        export_id = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        final_dir = self._resolve_unique_export_dir(output_root, export_id)
+        tmp_dir = output_root / f"tmp_{final_dir.name}"
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+
+        for split in ("train", "val", "test"):
+            (tmp_dir / "images" / split).mkdir(parents=True, exist_ok=True)
+            (tmp_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
+
+        assignments, split_counts, split_ratio = self._assign_split_by_session(selected_samples)
+        io_stats = {"hardlink": 0, "copy": 0}
+        failed_items: List[Dict[str, object]] = []
+        copied_images = 0
+        copied_labels = 0
+        copied_split_counts = {"train": 0, "val": 0, "test": 0}
+
+        checkpoint_path = tmp_dir / "export_checkpoint.json"
+        checkpoint = {
+            "schema_version": "v2.2",
+            "export_id": final_dir.name,
+            "status": "running",
+            "phase": "copy_images",
+            "last_processed_index": -1,
+            "copied_images": 0,
+            "copied_labels": 0,
+            "failed_items": 0,
+            "updated_at": self._iso_utc_now(),
+        }
+
+        def flush_checkpoint() -> None:
+            checkpoint["updated_at"] = self._iso_utc_now()
+            checkpoint_path.write_text(
+                json.dumps(checkpoint, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+        flush_checkpoint()
+
+        try:
+            for idx, sample in enumerate(selected_samples):
+                sample_id = str(sample.get("sample_id", f"sample_{idx:06d}"))
+                split = assignments.get(sample_id, "train")
+                source_path = self._resolve_source_image_path(sample)
+                checkpoint["last_processed_index"] = idx
+
+                if source_path is None or not source_path.exists():
+                    failed_items.append(
+                        {
+                            "sample_id": sample_id,
+                            "reason": "missing_source_image",
+                            "image_rel_path": str(sample.get("image_rel_path", "")),
+                        }
+                    )
+                    checkpoint["failed_items"] = int(checkpoint["failed_items"]) + 1
+                    if idx % 20 == 0:
+                        flush_checkpoint()
+                    continue
+
+                suffix = source_path.suffix.lower() or ".jpg"
+                target_name = f"{idx:06d}{suffix}"
+                target_image = tmp_dir / "images" / split / target_name
+                io_mode = self._materialize_image(source_path, target_image)
+                io_stats[io_mode] = io_stats.get(io_mode, 0) + 1
+
+                target_label = tmp_dir / "labels" / split / f"{Path(target_name).stem}.txt"
+                target_label.write_text("", encoding="utf-8")
+
+                copied_images += 1
+                copied_labels += 1
+                copied_split_counts[split] = copied_split_counts.get(split, 0) + 1
+                checkpoint["copied_images"] = copied_images
+                checkpoint["copied_labels"] = copied_labels
+                if idx % 20 == 0:
+                    flush_checkpoint()
+
+            checkpoint["phase"] = "write_manifest"
+            flush_checkpoint()
+
+            data_yaml = (
+                "path: .\n"
+                "train: images/train\n"
+                "val: images/val\n"
+                "test: images/test\n"
+                "names:\n"
+                "  0: monster\n"
+                "  1: hero\n"
+                "  2: gate\n"
+            )
+            (tmp_dir / "data.yaml").write_text(data_yaml, encoding="utf-8")
+
+            export_manifest = dict(selection_manifest)
+            export_manifest.update(
+                {
+                    "export_id": final_dir.name,
+                    "source_selection_id": selection_manifest.get("selection_id"),
+                    "created_at": self._iso_utc_now(),
+                    "mode": "by_filter",
+                    "split": {
+                        "train": split_ratio["train"],
+                        "val": split_ratio["val"],
+                        "test": split_ratio["test"],
+                        "seed": 42,
+                    },
+                    "io_strategy": {"primary": "hardlink", "fallback": "copy"},
+                    "io_stats": io_stats,
+                    "result": {
+                        "total": copied_images,
+                        "train": copied_split_counts.get("train", 0),
+                        "val": copied_split_counts.get("val", 0),
+                        "test": copied_split_counts.get("test", 0),
+                        "missing_sources": len(failed_items),
+                        "assigned_before_missing": split_counts,
+                    },
+                }
+            )
+
+            validation_report = self._build_validation_report(
+                export_dir=tmp_dir,
+                split_counts=copied_split_counts,
+                missing_sources=len(failed_items),
+                failed_items=failed_items,
+            )
+
+            (tmp_dir / "selection_manifest.json").write_text(
+                json.dumps(export_manifest, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (tmp_dir / "validation_report.json").write_text(
+                json.dumps(validation_report, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            checkpoint["status"] = "completed"
+            checkpoint["phase"] = "done"
+            flush_checkpoint()
+
+            if final_dir.exists():
+                shutil.rmtree(final_dir, ignore_errors=True)
+            tmp_dir.replace(final_dir)
+
+            return {
+                "export_id": final_dir.name,
+                "output_dir": str(final_dir),
+                "total": copied_images,
+                "missing": len(failed_items),
+            }
+        except Exception:
+            checkpoint["status"] = "failed"
+            checkpoint["phase"] = "failed"
+            flush_checkpoint()
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
 
     def _on_start_pseudo_task(self, payload: Dict[str, object]) -> None:
         """启动预标注任务（当前为 UI 演示用模拟流程）。"""
