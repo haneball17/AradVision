@@ -232,3 +232,25 @@ window_cache/
 # configs/
 # !configs/config.yaml
 # !configs/README.md
+
+*.jpg
+# ---------------------- 模型与数据 ----------------------
+# YOLO 模型文件（训练后生成，通常很大）
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.engine
+!models/.gitkeep
+!models/README.md
+
+# assets 目录（模型、权重、资源文件）
+assets/
+!assets/.gitkeep
+!assets/README.md
+
+# 训练数据集
+dataset/
+data/
+datasets/
+!data/.gitkeep
+!data/README.md
