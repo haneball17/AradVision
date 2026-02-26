@@ -116,4 +116,4 @@ class VideoPreviewWidget(QLabel):
 
     def sizeHint(self):
         """推荐大小"""
-        return QSize(640, 480)
+        return QSize(560, 320)

@@ -30,6 +30,7 @@ except Exception:
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -61,8 +62,8 @@ class TimelineWorkbenchWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("AradVision 数据采集与预标注工作台")
-        self.setMinimumSize(1200, 800)
-        self.resize(1400, 900)
+        self.setMinimumSize(980, 680)
+        self._init_window_size()
 
         self._samples: List[Dict[str, object]] = []
         self._current_task_id: str = ""
@@ -91,6 +92,19 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.workspace_switch_bar: WorkspaceSwitchBar
         self.capture_control_bar: CaptureControlBar
         self.workspace_stack: QStackedWidget
+        self._page_subtitle: QLabel
+        self._root_layout: QVBoxLayout
+        self._top_layout: QVBoxLayout
+        self._workspace_layout: QVBoxLayout
+        self._log_layout: QVBoxLayout
+        self._session_layout: QVBoxLayout
+        self._center_layout: QVBoxLayout
+        self._export_layout: QVBoxLayout
+        self._pseudo_layout: QVBoxLayout
+        self._main_vertical_splitter: QSplitter
+        self._capture_outer_splitter: QSplitter
+        self._capture_content_splitter: QSplitter
+        self._responsive_mode: str = ""
 
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
@@ -107,8 +121,21 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._load_demo_data()
         self._refresh_window_candidates()
         self.apply_theme("light")
+        self._apply_responsive_layout(self.width(), force=True)
 
         logger.info("时间线工作台窗口初始化完成")
+
+    def _init_window_size(self) -> None:
+        """按屏幕可用区域初始化窗口尺寸，避免高缩放下默认过大。"""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(1280, 820)
+            return
+
+        available = screen.availableGeometry()
+        width = max(1100, int(available.width() * 0.84))
+        height = max(760, int(available.height() * 0.88))
+        self.resize(width, height)
 
     def _init_ui(self) -> None:
         """初始化主界面结构。"""
@@ -117,12 +144,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.setCentralWidget(central)
 
         root_layout = QVBoxLayout(central)
+        self._root_layout = root_layout
         root_layout.setContentsMargins(24, 24, 24, 24)
         root_layout.setSpacing(16)
 
         top_card = QWidget()
         top_card.setObjectName("TopCard")
         top_layout = QVBoxLayout(top_card)
+        self._top_layout = top_layout
         top_layout.setContentsMargins(16, 16, 16, 16)
         top_layout.setSpacing(12)
 
@@ -131,10 +160,10 @@ class TimelineWorkbenchWindow(QMainWindow):
         title_layout.setSpacing(8)
         title_label = QLabel("数据采集时间线工作台")
         title_label.setObjectName("PageTitle")
-        subtitle_label = QLabel("采集、筛选、导出与预标注统一入口")
-        subtitle_label.setObjectName("PageSubtitle")
+        self._page_subtitle = QLabel("采集、筛选、导出与预标注统一入口")
+        self._page_subtitle.setObjectName("PageSubtitle")
         title_layout.addWidget(title_label)
-        title_layout.addWidget(subtitle_label)
+        title_layout.addWidget(self._page_subtitle)
         title_layout.addStretch()
 
         self.workspace_switch_bar = WorkspaceSwitchBar()
@@ -149,17 +178,17 @@ class TimelineWorkbenchWindow(QMainWindow):
         workspace_card = QWidget()
         workspace_card.setObjectName("WorkspaceCard")
         workspace_layout = QVBoxLayout(workspace_card)
+        self._workspace_layout = workspace_layout
         workspace_layout.setContentsMargins(16, 16, 16, 16)
         workspace_layout.setSpacing(12)
         workspace_layout.addWidget(self.workspace_stack, stretch=1)
 
         self.workspace_stack.addWidget(self._build_capture_workspace())
         self.workspace_stack.addWidget(self._build_pseudo_workspace())
-        root_layout.addWidget(workspace_card, stretch=1)
-
         log_card = QWidget()
         log_card.setObjectName("LogCard")
         log_layout = QVBoxLayout(log_card)
+        self._log_layout = log_layout
         log_layout.setContentsMargins(16, 16, 16, 16)
         log_layout.setSpacing(8)
 
@@ -170,9 +199,16 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumBlockCount(1000)
-        self.log_text.setFixedHeight(180)
+        self.log_text.setMinimumHeight(120)
         log_layout.addWidget(self.log_text)
-        root_layout.addWidget(log_card)
+
+        self._main_vertical_splitter = QSplitter(Qt.Vertical)
+        self._main_vertical_splitter.setHandleWidth(10)
+        self._main_vertical_splitter.addWidget(workspace_card)
+        self._main_vertical_splitter.addWidget(log_card)
+        self._main_vertical_splitter.setStretchFactor(0, 1)
+        self._main_vertical_splitter.setStretchFactor(1, 0)
+        root_layout.addWidget(self._main_vertical_splitter, stretch=1)
 
     def _load_runtime_config(self) -> None:
         """加载运行时配置。"""
@@ -195,13 +231,14 @@ class TimelineWorkbenchWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(10)
-        layout.addWidget(splitter)
+        self._capture_outer_splitter = QSplitter(Qt.Horizontal)
+        self._capture_outer_splitter.setHandleWidth(10)
+        layout.addWidget(self._capture_outer_splitter)
 
         session_panel = QWidget()
         session_panel.setObjectName("SessionPanel")
         session_layout = QVBoxLayout(session_panel)
+        self._session_layout = session_layout
         session_layout.setContentsMargins(16, 16, 16, 16)
         session_layout.setSpacing(10)
         session_title = QLabel("会话列表")
@@ -212,13 +249,18 @@ class TimelineWorkbenchWindow(QMainWindow):
         session_layout.addWidget(session_hint)
 
         self.session_list = QListWidget()
-        self.session_list.setMinimumWidth(220)
+        self.session_list.setMinimumWidth(180)
         session_layout.addWidget(self.session_list, stretch=1)
-        splitter.addWidget(session_panel)
+        self._capture_outer_splitter.addWidget(session_panel)
+
+        self._capture_content_splitter = QSplitter(Qt.Horizontal)
+        self._capture_content_splitter.setHandleWidth(10)
+        self._capture_outer_splitter.addWidget(self._capture_content_splitter)
 
         center_panel = QWidget()
         center_panel.setObjectName("CenterPanel")
         center_layout = QVBoxLayout(center_panel)
+        self._center_layout = center_layout
         center_layout.setContentsMargins(16, 16, 16, 16)
         center_layout.setSpacing(12)
         preview_title = QLabel("实时预览与时间线")
@@ -230,19 +272,21 @@ class TimelineWorkbenchWindow(QMainWindow):
         center_layout.addWidget(self.video_preview, stretch=2)
         center_layout.addWidget(self.timeline_panel, stretch=2)
         center_layout.addWidget(self.frame_strip, stretch=1)
-        splitter.addWidget(center_panel)
+        self._capture_content_splitter.addWidget(center_panel)
 
         export_panel_card = QWidget()
         export_panel_card.setObjectName("ExportPanelCard")
         export_layout = QVBoxLayout(export_panel_card)
+        self._export_layout = export_layout
         export_layout.setContentsMargins(16, 16, 16, 16)
         export_layout.setSpacing(10)
         self.export_panel = ExportPanel()
-        self.export_panel.setMinimumWidth(320)
+        self.export_panel.setMinimumWidth(260)
         export_layout.addWidget(self.export_panel, stretch=1)
-        splitter.addWidget(export_panel_card)
+        self._capture_content_splitter.addWidget(export_panel_card)
 
-        splitter.setSizes([260, 780, 340])
+        self._capture_outer_splitter.setSizes([230, 980])
+        self._capture_content_splitter.setSizes([760, 320])
         return workspace
 
     def _build_pseudo_workspace(self) -> QWidget:
@@ -255,6 +299,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         pseudo_card = QWidget()
         pseudo_card.setObjectName("PseudoPanelCard")
         pseudo_layout = QVBoxLayout(pseudo_card)
+        self._pseudo_layout = pseudo_layout
         pseudo_layout.setContentsMargins(16, 16, 16, 16)
         pseudo_layout.setSpacing(10)
 
@@ -262,6 +307,85 @@ class TimelineWorkbenchWindow(QMainWindow):
         pseudo_layout.addWidget(self.pseudo_label_panel)
         layout.addWidget(pseudo_card)
         return workspace
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        """窗口尺寸变化时应用响应式布局。"""
+        super().resizeEvent(event)
+        self._apply_responsive_layout(event.size().width())
+
+    def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
+        """根据窗口宽度切换布局密度与分栏策略。"""
+        if width < 1280:
+            mode = "dense"
+        elif width < 1540:
+            mode = "compact"
+        else:
+            mode = "default"
+
+        if not force and mode == self._responsive_mode:
+            return
+
+        self._responsive_mode = mode
+
+        if mode == "default":
+            outer_margin = 24
+            card_padding = 16
+            section_spacing = 12
+            root_spacing = 16
+            self._capture_content_splitter.setOrientation(Qt.Horizontal)
+            self.export_panel.setMinimumWidth(300)
+            self.session_list.setMinimumWidth(220)
+            self.video_preview.setMinimumSize(640, 360)
+            self._capture_outer_splitter.setSizes([240, 1020])
+            self._capture_content_splitter.setSizes([780, 340])
+            self._main_vertical_splitter.setSizes([760, 200])
+            self.capture_control_bar.set_compact_mode(False)
+            self._page_subtitle.setVisible(True)
+        elif mode == "compact":
+            outer_margin = 16
+            card_padding = 14
+            section_spacing = 10
+            root_spacing = 12
+            self._capture_content_splitter.setOrientation(Qt.Horizontal)
+            self.export_panel.setMinimumWidth(260)
+            self.session_list.setMinimumWidth(180)
+            self.video_preview.setMinimumSize(540, 300)
+            self._capture_outer_splitter.setSizes([210, 920])
+            self._capture_content_splitter.setSizes([690, 300])
+            self._main_vertical_splitter.setSizes([700, 180])
+            self.capture_control_bar.set_compact_mode(True)
+            self._page_subtitle.setVisible(True)
+        else:
+            outer_margin = 12
+            card_padding = 12
+            section_spacing = 8
+            root_spacing = 10
+            self._capture_content_splitter.setOrientation(Qt.Vertical)
+            self.export_panel.setMinimumWidth(0)
+            self.session_list.setMinimumWidth(160)
+            self.video_preview.setMinimumSize(440, 250)
+            self._capture_outer_splitter.setSizes([190, 860])
+            self._capture_content_splitter.setSizes([560, 260])
+            self._main_vertical_splitter.setSizes([640, 170])
+            self.capture_control_bar.set_compact_mode(True)
+            self._page_subtitle.setVisible(False)
+
+        self._root_layout.setContentsMargins(
+            outer_margin, outer_margin, outer_margin, outer_margin
+        )
+        self._root_layout.setSpacing(root_spacing)
+
+        for layout in (
+            self._top_layout,
+            self._workspace_layout,
+            self._log_layout,
+            self._session_layout,
+            self._center_layout,
+            self._export_layout,
+            self._pseudo_layout,
+        ):
+            layout.setContentsMargins(card_padding, card_padding, card_padding, card_padding)
+            layout.setSpacing(section_spacing)
 
     def _connect_signals(self) -> None:
         """连接界面交互信号。"""
