@@ -28,6 +28,19 @@ QWidget#PseudoPanelCard {
     border-radius: 12px;
 }
 
+QDockWidget {
+    border: none;
+}
+
+QDockWidget::title {
+    background-color: #FFFFFF;
+    color: #1F2430;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 12px;
+    border: none;
+}
+
 QLabel#PageTitle {
     font-size: 20px;
     font-weight: 600;

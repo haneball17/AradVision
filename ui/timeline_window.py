@@ -41,7 +41,9 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QPlainTextEdit,
     QLabel,
+    QDockWidget,
 )
+from PyQt5.QtCore import QSettings
 
 from core.capture import create_capture_engine
 from core.config import AppConfig, ConfigLoader
@@ -101,12 +103,13 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._center_layout: QVBoxLayout
         self._export_layout: QVBoxLayout
         self._pseudo_layout: QVBoxLayout
-        self._main_vertical_splitter: QSplitter
-        self._capture_outer_splitter: QSplitter
         self._capture_content_splitter: QSplitter
         self._center_vertical_splitter: QSplitter
+        self._session_dock: QDockWidget
+        self._log_dock: QDockWidget
         self._responsive_mode: str = ""
         self._current_screen = None
+        self._settings: QSettings = QSettings("AradVision", "TimelineWorkbench")
 
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
@@ -118,6 +121,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.log_text: QPlainTextEdit
 
         self._init_ui()
+        self._restore_ui_state()
         self._load_runtime_config()
         self._connect_signals()
         self._load_demo_data()
@@ -203,9 +207,59 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         self.workspace_stack.addWidget(self._build_capture_workspace())
         self.workspace_stack.addWidget(self._build_pseudo_workspace())
-        log_card = QWidget()
-        log_card.setObjectName("LogCard")
-        log_layout = QVBoxLayout(log_card)
+        root_layout.addWidget(workspace_card, stretch=1)
+
+        self._build_session_dock()
+        self._build_log_dock()
+        self._init_view_menu()
+
+    def _build_session_dock(self) -> None:
+        """构建会话列表停靠面板。"""
+        self._session_dock = QDockWidget("会话列表", self)
+        self._session_dock.setObjectName("SessionDock")
+        self._session_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._session_dock.setFeatures(
+            QDockWidget.DockWidgetClosable
+            | QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+        )
+
+        session_panel = QWidget()
+        session_panel.setObjectName("SessionPanel")
+        session_layout = QVBoxLayout(session_panel)
+        self._session_layout = session_layout
+        session_layout.setContentsMargins(16, 16, 16, 16)
+        session_layout.setSpacing(10)
+
+        session_title = QLabel("会话列表")
+        session_title.setObjectName("SectionTitle")
+        session_layout.addWidget(session_title)
+
+        session_hint = QLabel("选择会话后可查看样本时间线")
+        session_hint.setObjectName("HintText")
+        session_layout.addWidget(session_hint)
+
+        self.session_list = QListWidget()
+        self.session_list.setMinimumWidth(180)
+        session_layout.addWidget(self.session_list, stretch=1)
+
+        self._session_dock.setWidget(session_panel)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._session_dock)
+
+    def _build_log_dock(self) -> None:
+        """构建系统日志停靠面板。"""
+        self._log_dock = QDockWidget("系统日志", self)
+        self._log_dock.setObjectName("LogDock")
+        self._log_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+        self._log_dock.setFeatures(
+            QDockWidget.DockWidgetClosable
+            | QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+        )
+
+        log_panel = QWidget()
+        log_panel.setObjectName("LogCard")
+        log_layout = QVBoxLayout(log_panel)
         self._log_layout = log_layout
         log_layout.setContentsMargins(16, 16, 16, 16)
         log_layout.setSpacing(8)
@@ -220,14 +274,24 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.log_text.setMinimumHeight(80)
         log_layout.addWidget(self.log_text)
 
-        self._main_vertical_splitter = QSplitter(Qt.Vertical)
-        self._main_vertical_splitter.setHandleWidth(10)
-        self._main_vertical_splitter.addWidget(workspace_card)
-        self._main_vertical_splitter.addWidget(log_card)
-        self._main_vertical_splitter.setStretchFactor(0, 1)
-        self._main_vertical_splitter.setStretchFactor(1, 0)
-        self._main_vertical_splitter.setSizes([760, 120])
-        root_layout.addWidget(self._main_vertical_splitter, stretch=1)
+        self._log_dock.setWidget(log_panel)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self._log_dock)
+
+    def _init_view_menu(self) -> None:
+        """初始化视图菜单，提供会话与日志面板开关。"""
+        view_menu = self.menuBar().addMenu("视图")
+
+        session_toggle_action = self._session_dock.toggleViewAction()
+        session_toggle_action.setText("会话列表")
+        session_toggle_action.setShortcut("Alt+1")
+        session_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
+        view_menu.addAction(session_toggle_action)
+
+        log_toggle_action = self._log_dock.toggleViewAction()
+        log_toggle_action.setText("系统日志")
+        log_toggle_action.setShortcut("Alt+2")
+        log_toggle_action.setShortcutContext(Qt.ApplicationShortcut)
+        view_menu.addAction(log_toggle_action)
 
     def _load_runtime_config(self) -> None:
         """加载运行时配置。"""
@@ -250,31 +314,9 @@ class TimelineWorkbenchWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self._capture_outer_splitter = QSplitter(Qt.Horizontal)
-        self._capture_outer_splitter.setHandleWidth(10)
-        layout.addWidget(self._capture_outer_splitter)
-
-        session_panel = QWidget()
-        session_panel.setObjectName("SessionPanel")
-        session_layout = QVBoxLayout(session_panel)
-        self._session_layout = session_layout
-        session_layout.setContentsMargins(16, 16, 16, 16)
-        session_layout.setSpacing(10)
-        session_title = QLabel("会话列表")
-        session_title.setObjectName("SectionTitle")
-        session_layout.addWidget(session_title)
-        session_hint = QLabel("选择会话后可查看样本时间线")
-        session_hint.setObjectName("HintText")
-        session_layout.addWidget(session_hint)
-
-        self.session_list = QListWidget()
-        self.session_list.setMinimumWidth(160)
-        session_layout.addWidget(self.session_list, stretch=1)
-        self._capture_outer_splitter.addWidget(session_panel)
-
         self._capture_content_splitter = QSplitter(Qt.Horizontal)
         self._capture_content_splitter.setHandleWidth(10)
-        self._capture_outer_splitter.addWidget(self._capture_content_splitter)
+        layout.addWidget(self._capture_content_splitter)
 
         center_panel = QWidget()
         center_panel.setObjectName("CenterPanel")
@@ -312,8 +354,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         export_layout.addWidget(self.export_panel, stretch=1)
         self._capture_content_splitter.addWidget(export_panel_card)
 
-        self._capture_outer_splitter.setSizes([230, 980])
-        self._capture_content_splitter.setSizes([760, 320])
+        self._capture_content_splitter.setSizes([860, 320])
         return workspace
 
     def _build_pseudo_workspace(self) -> QWidget:
@@ -345,6 +386,11 @@ class TimelineWorkbenchWindow(QMainWindow):
         super().showEvent(event)
         self._attach_screen_signals()
         self._apply_responsive_layout(self.width(), force=True)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """窗口关闭时持久化布局状态。"""
+        self._save_ui_state()
+        super().closeEvent(event)
 
     def _attach_screen_signals(self) -> None:
         """监听窗口所在屏幕变化和 DPI 变化。"""
@@ -385,6 +431,38 @@ class TimelineWorkbenchWindow(QMainWindow):
         """系统 DPI 变化后刷新响应式布局。"""
         self._apply_responsive_layout(self.width(), force=True)
 
+    def _restore_ui_state(self) -> None:
+        """恢复窗口与停靠面板状态。"""
+        geometry = self._settings.value("window/geometry")
+        state = self._settings.value("window/state")
+        has_persisted = bool(self._settings.value("window/persisted", False, type=bool))
+
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        if state is not None:
+            self.restoreState(state)
+
+        if has_persisted:
+            session_visible = bool(
+                self._settings.value("dock/session_visible", False, type=bool)
+            )
+            log_visible = bool(self._settings.value("dock/log_visible", False, type=bool))
+            self._session_dock.setVisible(session_visible)
+            self._log_dock.setVisible(log_visible)
+        else:
+            # 首次启动默认折叠，需要时再展开。
+            self._session_dock.hide()
+            self._log_dock.hide()
+
+    def _save_ui_state(self) -> None:
+        """保存窗口与停靠面板状态。"""
+        self._settings.setValue("window/geometry", self.saveGeometry())
+        self._settings.setValue("window/state", self.saveState())
+        self._settings.setValue("dock/session_visible", self._session_dock.isVisible())
+        self._settings.setValue("dock/log_visible", self._log_dock.isVisible())
+        self._settings.setValue("window/persisted", True)
+        self._settings.sync()
+
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
         scale = self._get_ui_scale_factor()
@@ -417,11 +495,8 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 16
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(300)
-            self.session_list.setMinimumWidth(220)
             self.video_preview.setMinimumSize(640, 360)
-            self._capture_outer_splitter.setSizes([240, 1020])
             self._capture_content_splitter.setSizes([780, 340])
-            self._main_vertical_splitter.setSizes([780, 180])
             self._center_vertical_splitter.setSizes([340, 290, 120])
             self.capture_control_bar.set_compact_mode(False)
             self.workspace_switch_bar.set_compact_mode(False)
@@ -434,11 +509,8 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 12
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(260)
-            self.session_list.setMinimumWidth(180)
             self.video_preview.setMinimumSize(500, 280)
-            self._capture_outer_splitter.setSizes([210, 920])
             self._capture_content_splitter.setSizes([690, 300])
-            self._main_vertical_splitter.setSizes([720, 140])
             self._center_vertical_splitter.setSizes([300, 260, 100])
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
@@ -451,11 +523,8 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 8
             self._capture_content_splitter.setOrientation(Qt.Vertical)
             self.export_panel.setMinimumWidth(0)
-            self.session_list.setMinimumWidth(140)
             self.video_preview.setMinimumSize(360, 210)
-            self._capture_outer_splitter.setSizes([170, 900])
             self._capture_content_splitter.setSizes([620, 220])
-            self._main_vertical_splitter.setSizes([780, 90])
             self._center_vertical_splitter.setSizes([420, 320, 0])
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
