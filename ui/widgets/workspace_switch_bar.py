@@ -16,6 +16,7 @@ class WorkspaceSwitchBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("WorkspaceSwitchBar")
+        self._compact_mode = False
 
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
@@ -24,8 +25,8 @@ class WorkspaceSwitchBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        title = QLabel("工作区")
-        title.setObjectName("SubSectionTitle")
+        self.title_label = QLabel("工作区")
+        self.title_label.setObjectName("SubSectionTitle")
 
         self.capture_button = QPushButton("采集工作区")
         self.capture_button.setObjectName("SegmentButton")
@@ -44,7 +45,7 @@ class WorkspaceSwitchBar(QWidget):
         self._button_group.addButton(self.capture_button)
         self._button_group.addButton(self.pseudo_button)
 
-        layout.addWidget(title)
+        layout.addWidget(self.title_label)
         layout.addWidget(self.capture_button)
         layout.addWidget(self.pseudo_button)
         layout.addStretch()
@@ -55,3 +56,11 @@ class WorkspaceSwitchBar(QWidget):
             self.capture_button.setChecked(True)
         elif workspace == "pseudo":
             self.pseudo_button.setChecked(True)
+
+    def set_compact_mode(self, compact: bool) -> None:
+        """切换紧凑模式，降低高缩放场景的顶部占高。"""
+        self._compact_mode = compact
+        self.title_label.setVisible(not compact)
+        height = 30 if compact else 34
+        self.capture_button.setMinimumHeight(height)
+        self.pseudo_button.setMinimumHeight(height)

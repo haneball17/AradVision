@@ -30,6 +30,7 @@ class CaptureControlBar(QWidget):
         super().__init__(parent)
         self.setObjectName("CaptureControlBar")
         self._compact_mode = False
+        self._current_status_text = "空闲"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -102,14 +103,28 @@ class CaptureControlBar(QWidget):
 
     def set_status(self, status_text: str) -> None:
         """更新状态显示。"""
-        if self._compact_mode and len(status_text) > 14:
-            status_text = status_text[:11] + "..."
-        self.status_label.setText(f"状态: {status_text}")
+        self._current_status_text = status_text
+        self._render_status_text()
 
     def set_compact_mode(self, compact: bool) -> None:
         """切换紧凑模式，减小高缩放场景的横向占用。"""
         self._compact_mode = compact
+        self.title_label.setVisible(not compact)
+        self.action_label.setVisible(not compact)
+        self.window_label.setVisible(not compact)
+        self.layout().setSpacing(6 if compact else 10)
         self.window_combo.setMinimumWidth(160 if compact else 220)
+        self._render_status_text()
+
+    def _render_status_text(self) -> None:
+        """根据当前模式渲染状态文本，避免紧凑布局中过长。"""
+        text = self._current_status_text
+        if self._compact_mode:
+            if len(text) > 10:
+                text = text[:8] + "..."
+            self.status_label.setText(text)
+            return
+        self.status_label.setText(f"状态: {text}")
 
     def selected_window_title(self) -> str:
         """获取当前选中的窗口标题。"""

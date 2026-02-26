@@ -104,6 +104,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._main_vertical_splitter: QSplitter
         self._capture_outer_splitter: QSplitter
         self._capture_content_splitter: QSplitter
+        self._center_vertical_splitter: QSplitter
         self._responsive_mode: str = ""
 
         self.session_list: QListWidget
@@ -208,6 +209,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._main_vertical_splitter.addWidget(log_card)
         self._main_vertical_splitter.setStretchFactor(0, 1)
         self._main_vertical_splitter.setStretchFactor(1, 0)
+        self._main_vertical_splitter.setSizes([740, 160])
         root_layout.addWidget(self._main_vertical_splitter, stretch=1)
 
     def _load_runtime_config(self) -> None:
@@ -269,9 +271,17 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.video_preview = VideoPreviewWidget()
         self.timeline_panel = TimelinePanel()
         self.frame_strip = FrameStrip()
-        center_layout.addWidget(self.video_preview, stretch=2)
-        center_layout.addWidget(self.timeline_panel, stretch=2)
-        center_layout.addWidget(self.frame_strip, stretch=1)
+
+        self._center_vertical_splitter = QSplitter(Qt.Vertical)
+        self._center_vertical_splitter.setHandleWidth(8)
+        self._center_vertical_splitter.addWidget(self.video_preview)
+        self._center_vertical_splitter.addWidget(self.timeline_panel)
+        self._center_vertical_splitter.addWidget(self.frame_strip)
+        self._center_vertical_splitter.setStretchFactor(0, 3)
+        self._center_vertical_splitter.setStretchFactor(1, 3)
+        self._center_vertical_splitter.setStretchFactor(2, 1)
+        self._center_vertical_splitter.setSizes([320, 260, 120])
+        center_layout.addWidget(self._center_vertical_splitter, stretch=1)
         self._capture_content_splitter.addWidget(center_panel)
 
         export_panel_card = QWidget()
@@ -315,9 +325,9 @@ class TimelineWorkbenchWindow(QMainWindow):
 
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
         """根据窗口宽度切换布局密度与分栏策略。"""
-        if width < 1280:
+        if width < 1460:
             mode = "dense"
-        elif width < 1540:
+        elif width < 1720:
             mode = "compact"
         else:
             mode = "default"
@@ -338,9 +348,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.video_preview.setMinimumSize(640, 360)
             self._capture_outer_splitter.setSizes([240, 1020])
             self._capture_content_splitter.setSizes([780, 340])
-            self._main_vertical_splitter.setSizes([760, 200])
+            self._main_vertical_splitter.setSizes([780, 180])
+            self._center_vertical_splitter.setSizes([340, 290, 120])
             self.capture_control_bar.set_compact_mode(False)
+            self.workspace_switch_bar.set_compact_mode(False)
             self._page_subtitle.setVisible(True)
+            self.frame_strip.set_collapsed(False)
         elif mode == "compact":
             outer_margin = 16
             card_padding = 14
@@ -352,23 +365,29 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.video_preview.setMinimumSize(540, 300)
             self._capture_outer_splitter.setSizes([210, 920])
             self._capture_content_splitter.setSizes([690, 300])
-            self._main_vertical_splitter.setSizes([700, 180])
+            self._main_vertical_splitter.setSizes([720, 140])
+            self._center_vertical_splitter.setSizes([300, 260, 100])
             self.capture_control_bar.set_compact_mode(True)
-            self._page_subtitle.setVisible(True)
+            self.workspace_switch_bar.set_compact_mode(True)
+            self._page_subtitle.setVisible(False)
+            self.frame_strip.set_collapsed(False)
         else:
             outer_margin = 12
-            card_padding = 12
-            section_spacing = 8
-            root_spacing = 10
+            card_padding = 10
+            section_spacing = 6
+            root_spacing = 8
             self._capture_content_splitter.setOrientation(Qt.Vertical)
             self.export_panel.setMinimumWidth(0)
             self.session_list.setMinimumWidth(160)
             self.video_preview.setMinimumSize(440, 250)
             self._capture_outer_splitter.setSizes([190, 860])
             self._capture_content_splitter.setSizes([560, 260])
-            self._main_vertical_splitter.setSizes([640, 170])
+            self._main_vertical_splitter.setSizes([720, 120])
+            self._center_vertical_splitter.setSizes([360, 300, 0])
             self.capture_control_bar.set_compact_mode(True)
+            self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
+            self.frame_strip.set_collapsed(True)
 
         self._root_layout.setContentsMargins(
             outer_margin, outer_margin, outer_margin, outer_margin

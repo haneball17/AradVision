@@ -18,14 +18,15 @@ class FrameStrip(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("FrameStrip")
+        self._collapsed = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        title = QLabel("时间线文件流")
-        title.setObjectName("SubSectionTitle")
-        layout.addWidget(title)
+        self.title_label = QLabel("时间线文件流")
+        self.title_label.setObjectName("SubSectionTitle")
+        layout.addWidget(self.title_label)
 
         self.list_widget = QListWidget()
         self.list_widget.itemClicked.connect(self._on_item_clicked)
@@ -45,3 +46,10 @@ class FrameStrip(QWidget):
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
         """向外通知当前选中帧。"""
         self.frame_selected.emit(item.text())
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """切换折叠状态，用于高缩放场景释放纵向空间。"""
+        if self._collapsed == collapsed:
+            return
+        self._collapsed = collapsed
+        self.setVisible(not collapsed)
