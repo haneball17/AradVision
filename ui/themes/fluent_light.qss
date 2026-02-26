@@ -217,6 +217,16 @@ QTableWidget::item:selected {
     color: #1E3A8A;
 }
 
+QWidget#SampleGridPanel QListWidget::item {
+    border-radius: 8px;
+    padding: 6px;
+}
+
+QWidget#FrameStrip QListWidget::item {
+    border-radius: 6px;
+    padding: 4px;
+}
+
 QHeaderView::section {
     background-color: #F9FAFB;
     border: none;
@@ -251,6 +261,31 @@ QSplitter::handle:horizontal {
 
 QSplitter::handle:vertical {
     height: 8px;
+}
+
+QSlider::groove:horizontal {
+    height: 4px;
+    border-radius: 2px;
+    background: #E5E7EB;
+}
+
+QSlider::sub-page:horizontal {
+    background: #2563EB;
+    border-radius: 2px;
+}
+
+QSlider::add-page:horizontal {
+    background: #E5E7EB;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+    border: 1px solid #1D4ED8;
+    background: #2563EB;
 }
 
 QScrollBar:vertical {

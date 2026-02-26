@@ -36,6 +36,7 @@ class FrameStrip(QWidget):
         self._user_collapsed = True
         self._force_collapsed = False
         self._path_resolver: Optional[Callable[[str], Optional[str]]] = None
+        self._density_mode = "default"
         self._cache = ThumbnailCache(QSize(112, 63), max_items=768)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(42)
@@ -72,7 +73,33 @@ class FrameStrip(QWidget):
         self.list_widget.setMinimumHeight(108)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.list_widget)
+        self.set_density_mode("default")
         self._apply_collapsed_state()
+
+    def set_density_mode(self, mode: str) -> None:
+        """设置明细条密度模式。"""
+        normalized = mode if mode in {"default", "compact", "dense"} else "default"
+        if normalized == self._density_mode:
+            return
+        self._density_mode = normalized
+
+        if normalized == "default":
+            icon_size = QSize(112, 63)
+            grid_size = QSize(132, 100)
+            min_height = 108
+        elif normalized == "compact":
+            icon_size = QSize(102, 58)
+            grid_size = QSize(122, 94)
+            min_height = 100
+        else:
+            icon_size = QSize(92, 52)
+            grid_size = QSize(110, 84)
+            min_height = 90
+
+        self._cache = ThumbnailCache(icon_size, max_items=768)
+        self.list_widget.setIconSize(icon_size)
+        self.list_widget.setGridSize(grid_size)
+        self.list_widget.setMinimumHeight(min_height)
 
     def set_image_path_resolver(self, resolver: Optional[Callable[[str], Optional[str]]]) -> None:
         """设置相对路径到绝对路径的解析器。"""
@@ -112,6 +139,22 @@ class FrameStrip(QWidget):
         """向外通知当前选中帧。"""
         rel_path = str(item.data(Qt.UserRole) or item.text())
         self.frame_selected.emit(rel_path)
+
+    def select_frame(self, image_rel_path: str) -> None:
+        """按相对路径定位并选中对应帧。"""
+        target = str(image_rel_path).strip()
+        if not target:
+            return
+        for idx in range(self.list_widget.count()):
+            item = self.list_widget.item(idx)
+            if item is None:
+                continue
+            rel = str(item.data(Qt.UserRole) or "")
+            if rel != target:
+                continue
+            self.list_widget.setCurrentItem(item)
+            self.list_widget.scrollToItem(item)
+            return
 
     def _on_toggle_clicked(self) -> None:
         """切换明细抽屉展开状态。"""

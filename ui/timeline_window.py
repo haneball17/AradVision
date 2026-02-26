@@ -73,7 +73,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("AradVision 训练数据资产管理工作台")
-        self.setMinimumSize(920, 620)
+        self.setMinimumSize(1200, 700)
         self._init_window_size()
 
         self._samples: List[Dict[str, object]] = []
@@ -101,6 +101,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_active_backend: str = "unknown"
         self._capture_started_at: str = ""
         self._capture_stats: Dict[str, int] = {}
+        self._sample_focus_last_log_at = 0.0
 
         self._task_timer = QTimer(self)
         self._task_timer.timeout.connect(self._tick_pseudo_task)
@@ -159,12 +160,12 @@ class TimelineWorkbenchWindow(QMainWindow):
         """按屏幕可用区域初始化窗口尺寸，避免高缩放下默认过大。"""
         screen = QApplication.primaryScreen()
         if screen is None:
-            self.resize(1280, 820)
+            self.resize(1380, 820)
             return
 
         available = screen.availableGeometry()
-        width = max(1100, int(available.width() * 0.84))
-        height = max(760, int(available.height() * 0.88))
+        width = max(1200, int(available.width() * 0.84))
+        height = max(700, int(available.height() * 0.88))
         self.resize(width, height)
 
     def _get_ui_scale_factor(self) -> float:
@@ -300,7 +301,20 @@ class TimelineWorkbenchWindow(QMainWindow):
         sidebar.setMinimumWidth(300)
         sidebar.setMaximumWidth(360)
 
-        layout = QVBoxLayout(sidebar)
+        outer_layout = QVBoxLayout(sidebar)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_layout.addWidget(scroll, stretch=1)
+
+        container = QWidget()
+        scroll.setWidget(container)
+
+        layout = QVBoxLayout(container)
         self._aux_layout = layout
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
@@ -597,10 +611,10 @@ class TimelineWorkbenchWindow(QMainWindow):
 
         # 优先按缩放系数判断，再用宽度微调，避免 150% 在高分屏下误判为 default。
         if scale >= 1.45:
-            mode = "dense"
+            mode = "dense" if width < 1600 else "compact"
         elif scale >= 1.25:
             mode = "compact" if width < 1850 else "default"
-        elif width < 1360:
+        elif width < 1280:
             mode = "dense"
         elif width < 1680:
             mode = "compact"
@@ -623,7 +637,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 16
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(300)
-            self._capture_content_splitter.setSizes([780, 340])
+            self._capture_content_splitter.setSizes([860, 340])
             self.video_preview.setMinimumSize(640, 360)
             self.capture_control_bar.set_compact_mode(False)
             self.workspace_switch_bar.set_compact_mode(False)
@@ -634,6 +648,8 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.sample_grid_panel.setMinimumHeight(300)
             self.timeline_panel.setMinimumHeight(136)
             self.frame_strip.set_force_collapsed(False)
+            self.sample_grid_panel.set_density_mode("default")
+            self.frame_strip.set_density_mode("default")
         elif mode == "compact":
             outer_margin = 16
             card_padding = 14
@@ -641,7 +657,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 12
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(260)
-            self._capture_content_splitter.setSizes([690, 300])
+            self._capture_content_splitter.setSizes([760, 300])
             self.video_preview.setMinimumSize(520, 300)
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
@@ -652,24 +668,28 @@ class TimelineWorkbenchWindow(QMainWindow):
             self.sample_grid_panel.setMinimumHeight(260)
             self.timeline_panel.setMinimumHeight(124)
             self.frame_strip.set_force_collapsed(False)
+            self.sample_grid_panel.set_density_mode("compact")
+            self.frame_strip.set_density_mode("compact")
         else:
             outer_margin = 12
             card_padding = 10
-            section_spacing = 6
-            root_spacing = 8
-            self._capture_content_splitter.setOrientation(Qt.Vertical)
-            self.export_panel.setMinimumWidth(0)
-            self._capture_content_splitter.setSizes([620, 220])
+            section_spacing = 8
+            root_spacing = 10
+            self._capture_content_splitter.setOrientation(Qt.Horizontal)
+            self.export_panel.setMinimumWidth(240)
+            self._capture_content_splitter.setSizes([660, 260])
             self.video_preview.setMinimumSize(420, 240)
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
-            self._aux_sidebar.setMinimumWidth(260)
-            self._aux_sidebar.setMaximumWidth(300)
-            self._body_layout.setSpacing(10)
+            self._aux_sidebar.setMinimumWidth(240)
+            self._aux_sidebar.setMaximumWidth(280)
+            self._body_layout.setSpacing(8)
             self.sample_grid_panel.setMinimumHeight(220)
-            self.timeline_panel.setMinimumHeight(112)
+            self.timeline_panel.setMinimumHeight(110)
             self.frame_strip.set_force_collapsed(True)
+            self.sample_grid_panel.set_density_mode("dense")
+            self.frame_strip.set_density_mode("dense")
 
         self._root_layout.setContentsMargins(
             outer_margin, outer_margin, outer_margin, outer_margin
@@ -680,14 +700,16 @@ class TimelineWorkbenchWindow(QMainWindow):
             self._top_layout,
             self._workspace_layout,
             self._aux_layout,
-            self._log_layout,
-            self._session_layout,
             self._center_layout,
             self._export_layout,
             self._pseudo_layout,
         ):
             layout.setContentsMargins(card_padding, card_padding, card_padding, card_padding)
             layout.setSpacing(section_spacing)
+
+        for sub_layout in (self._session_layout, self._log_layout):
+            sub_layout.setContentsMargins(0, 0, 0, 0)
+            sub_layout.setSpacing(max(6, section_spacing - 2))
 
     def _connect_signals(self) -> None:
         """连接界面交互信号。"""
@@ -1219,11 +1241,19 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.export_panel.set_range(len(self._samples) - 1, start_idx, end_idx)
 
     def _on_sample_activated(self, sample: Dict[str, object]) -> None:
-        """双击样本后的日志反馈。"""
-        self._append_log(f"定位样本: {sample.get('image_rel_path', '-')}")
+        """样本激活后同步时间轨道与明细定位。"""
+        self.timeline_panel.locate_sample(sample)
+        image_rel = str(sample.get("image_rel_path", sample.get("image_path", ""))).strip()
+        if image_rel:
+            self.frame_strip.select_frame(image_rel)
+        now = time.perf_counter()
+        if now - self._sample_focus_last_log_at >= 0.6:
+            self._sample_focus_last_log_at = now
+            self._append_log(f"定位样本: {sample.get('image_rel_path', '-')}")
 
     def _on_frame_selected(self, image_path: str) -> None:
-        """点击缩略图列表后的日志反馈。"""
+        """点击缩略图明细后的联动定位。"""
+        self.timeline_panel.locate_image_path(image_path)
         self._append_log(f"选中帧: {image_path}")
 
     def _on_batch_scene_update_requested(self, sample_ids: object, new_scene: str) -> None:

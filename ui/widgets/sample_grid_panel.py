@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -46,6 +47,7 @@ class SampleGridPanel(QWidget):
         self._all_samples: List[Dict[str, object]] = []
         self._filtered_samples: List[Dict[str, object]] = []
         self._image_path_resolver: Optional[Callable[[Dict[str, object]], Optional[str]]] = None
+        self._density_mode = "default"
         self._thumbnail_cache = ThumbnailCache(QSize(188, 106), max_items=1024)
         self._thumbnail_cursor = 0
         self._thumbnail_timer = QTimer(self)
@@ -98,6 +100,41 @@ class SampleGridPanel(QWidget):
         self.batch_apply_button.clicked.connect(self._on_batch_apply_clicked)
         self.grid_list.itemSelectionChanged.connect(self._on_selection_changed)
         self.grid_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.set_density_mode("default")
+
+    def set_density_mode(self, mode: str) -> None:
+        """设置网格密度模式，适配不同缩放与窗口尺寸。"""
+        normalized = mode if mode in {"default", "compact", "dense"} else "default"
+        if normalized == self._density_mode and self.grid_list.count() > 0:
+            return
+        self._density_mode = normalized
+
+        if normalized == "default":
+            icon_size = QSize(188, 106)
+            grid_size = QSize(232, 176)
+            spacing = 10
+            button_text = "批量修正场景"
+            show_selection = True
+        elif normalized == "compact":
+            icon_size = QSize(170, 96)
+            grid_size = QSize(206, 158)
+            spacing = 8
+            button_text = "批量修正"
+            show_selection = True
+        else:
+            icon_size = QSize(150, 84)
+            grid_size = QSize(178, 140)
+            spacing = 7
+            button_text = "修正"
+            show_selection = False
+
+        self._thumbnail_cache = ThumbnailCache(icon_size, max_items=1024)
+        self.grid_list.setIconSize(icon_size)
+        self.grid_list.setGridSize(grid_size)
+        self.grid_list.setSpacing(spacing)
+        self.batch_apply_button.setText(button_text)
+        self.selection_label.setVisible(show_selection)
+        self._apply_filter()
 
     def set_image_path_resolver(
         self, resolver: Optional[Callable[[Dict[str, object]], Optional[str]]]
@@ -126,15 +163,48 @@ class SampleGridPanel(QWidget):
 
     def _build_item_text(self, sample: Dict[str, object]) -> str:
         """构建网格卡片文本。"""
-        sample_id = str(sample.get("sample_id", "-"))[-14:]
+        sample_id = str(sample.get("sample_id", "-"))[-12:]
         scene = str(sample.get("scene", "other"))
-        ts = sample.get("timestamp_iso")
-        if ts:
-            ts_text = str(ts)[:19]
-        else:
-            ts_text = str(sample.get("timestamp_ms", "-"))
+        image_name = Path(
+            str(sample.get("image_rel_path", sample.get("image_path", ""))).strip() or "-"
+        ).name
+        ts_text = self._format_sample_time(sample)
 
-        return f"{scene}\n{ts_text}\n{sample_id}"
+        if self._density_mode == "default":
+            return f"{scene}  {ts_text}\n{image_name}"
+        if self._density_mode == "compact":
+            return f"{scene}  {ts_text}\n{sample_id}"
+        return f"{scene} {ts_text}"
+
+    def _build_item_tooltip(self, sample: Dict[str, object]) -> str:
+        """构建完整样本提示信息。"""
+        sample_id = str(sample.get("sample_id", "-"))
+        scene = str(sample.get("scene", "other"))
+        image_path = str(sample.get("image_rel_path", sample.get("image_path", "-")))
+        ts_text = self._format_sample_time(sample, full=True)
+        return (
+            f"sample_id: {sample_id}\n"
+            f"scene: {scene}\n"
+            f"time: {ts_text}\n"
+            f"file: {image_path}"
+        )
+
+    def _format_sample_time(self, sample: Dict[str, object], full: bool = False) -> str:
+        """格式化样本时间文本。"""
+        ts_iso = str(sample.get("timestamp_iso", "")).strip()
+        if ts_iso:
+            text = ts_iso.replace("T", " ").replace("Z", "")
+            if full:
+                return text
+            return text[11:19] if len(text) >= 19 else text
+
+        ts_ms = sample.get("timestamp_ms")
+        try:
+            ts_value = int(ts_ms)
+            dt = datetime.fromtimestamp(ts_value / 1000.0)
+            return dt.strftime("%Y-%m-%d %H:%M:%S") if full else dt.strftime("%H:%M:%S")
+        except Exception:
+            return str(ts_ms if ts_ms is not None else "-")
 
     def _resolve_image_path(self, sample: Dict[str, object]) -> str:
         """解析样本对应的图片路径。"""
@@ -185,7 +255,8 @@ class SampleGridPanel(QWidget):
         for sample in self._filtered_samples:
             item = QListWidgetItem(self._build_item_text(sample))
             item.setData(Qt.UserRole, sample)
-            item.setToolTip(self._build_item_text(sample))
+            item.setToolTip(self._build_item_tooltip(sample))
+            item.setTextAlignment(int(Qt.AlignLeft | Qt.AlignTop))
             image_path = self._resolve_image_path(sample)
             item.setData(Qt.UserRole + 1, image_path)
             item.setIcon(QIcon(self._thumbnail_cache.placeholder()))
