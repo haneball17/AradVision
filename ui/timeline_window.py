@@ -62,7 +62,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("AradVision 数据采集与预标注工作台")
-        self.setMinimumSize(980, 680)
+        self.setMinimumSize(920, 620)
         self._init_window_size()
 
         self._samples: List[Dict[str, object]] = []
@@ -106,6 +106,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._capture_content_splitter: QSplitter
         self._center_vertical_splitter: QSplitter
         self._responsive_mode: str = ""
+        self._current_screen = None
 
         self.session_list: QListWidget
         self.timeline_panel: TimelinePanel
@@ -216,7 +217,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumBlockCount(1000)
-        self.log_text.setMinimumHeight(120)
+        self.log_text.setMinimumHeight(80)
         log_layout.addWidget(self.log_text)
 
         self._main_vertical_splitter = QSplitter(Qt.Vertical)
@@ -225,7 +226,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         self._main_vertical_splitter.addWidget(log_card)
         self._main_vertical_splitter.setStretchFactor(0, 1)
         self._main_vertical_splitter.setStretchFactor(1, 0)
-        self._main_vertical_splitter.setSizes([740, 160])
+        self._main_vertical_splitter.setSizes([760, 120])
         root_layout.addWidget(self._main_vertical_splitter, stretch=1)
 
     def _load_runtime_config(self) -> None:
@@ -267,7 +268,7 @@ class TimelineWorkbenchWindow(QMainWindow):
         session_layout.addWidget(session_hint)
 
         self.session_list = QListWidget()
-        self.session_list.setMinimumWidth(180)
+        self.session_list.setMinimumWidth(160)
         session_layout.addWidget(self.session_list, stretch=1)
         self._capture_outer_splitter.addWidget(session_panel)
 
@@ -342,6 +343,46 @@ class TimelineWorkbenchWindow(QMainWindow):
     def showEvent(self, event) -> None:  # type: ignore[override]
         """窗口显示后再执行一次响应式判定，确保获取到正确屏幕 DPI。"""
         super().showEvent(event)
+        self._attach_screen_signals()
+        self._apply_responsive_layout(self.width(), force=True)
+
+    def _attach_screen_signals(self) -> None:
+        """监听窗口所在屏幕变化和 DPI 变化。"""
+        handle = self.windowHandle()
+        if handle is None:
+            return
+
+        try:
+            handle.screenChanged.disconnect(self._on_window_screen_changed)
+        except Exception:
+            pass
+        handle.screenChanged.connect(self._on_window_screen_changed)
+
+        self._on_window_screen_changed(handle.screen())
+
+    def _on_window_screen_changed(self, screen) -> None:
+        """窗口切换到新屏幕后，重连 DPI 信号并重算布局。"""
+        if self._current_screen is not None:
+            try:
+                self._current_screen.logicalDotsPerInchChanged.disconnect(
+                    self._on_screen_dpi_changed
+                )
+            except Exception:
+                pass
+
+        self._current_screen = screen
+        if self._current_screen is not None:
+            try:
+                self._current_screen.logicalDotsPerInchChanged.connect(
+                    self._on_screen_dpi_changed
+                )
+            except Exception:
+                pass
+
+        self._apply_responsive_layout(self.width(), force=True)
+
+    def _on_screen_dpi_changed(self, _dpi: float) -> None:
+        """系统 DPI 变化后刷新响应式布局。"""
         self._apply_responsive_layout(self.width(), force=True)
 
     def _apply_responsive_layout(self, width: int, force: bool = False) -> None:
@@ -394,7 +435,7 @@ class TimelineWorkbenchWindow(QMainWindow):
             self._capture_content_splitter.setOrientation(Qt.Horizontal)
             self.export_panel.setMinimumWidth(260)
             self.session_list.setMinimumWidth(180)
-            self.video_preview.setMinimumSize(540, 300)
+            self.video_preview.setMinimumSize(500, 280)
             self._capture_outer_splitter.setSizes([210, 920])
             self._capture_content_splitter.setSizes([690, 300])
             self._main_vertical_splitter.setSizes([720, 140])
@@ -410,12 +451,12 @@ class TimelineWorkbenchWindow(QMainWindow):
             root_spacing = 8
             self._capture_content_splitter.setOrientation(Qt.Vertical)
             self.export_panel.setMinimumWidth(0)
-            self.session_list.setMinimumWidth(160)
-            self.video_preview.setMinimumSize(440, 250)
-            self._capture_outer_splitter.setSizes([190, 860])
-            self._capture_content_splitter.setSizes([560, 260])
-            self._main_vertical_splitter.setSizes([720, 120])
-            self._center_vertical_splitter.setSizes([360, 300, 0])
+            self.session_list.setMinimumWidth(140)
+            self.video_preview.setMinimumSize(360, 210)
+            self._capture_outer_splitter.setSizes([170, 900])
+            self._capture_content_splitter.setSizes([620, 220])
+            self._main_vertical_splitter.setSizes([780, 90])
+            self._center_vertical_splitter.setSizes([420, 320, 0])
             self.capture_control_bar.set_compact_mode(True)
             self.workspace_switch_bar.set_compact_mode(True)
             self._page_subtitle.setVisible(False)
