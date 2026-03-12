@@ -168,6 +168,14 @@ recordings/
 *.mp4
 *.avi
 *.mkv
+*.mov
+*.flv
+*.webm
+
+# 外部资产临时导入目录（仅本地使用，不纳入版本控制）
+assets/videos/
+assets/imported/
+assets/frames/
 
 # ---------------------- 文档生成 ----------------------
 # Sphinx 文档

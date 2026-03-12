@@ -15,19 +15,6 @@ QWidget {
     font-size: 13px;
 }
 
-/* ==================== 结构容器 ==================== */
-QWidget#TopCard,
-QWidget#WorkspaceCard,
-QWidget#LogCard,
-QWidget#SessionPanel,
-QWidget#CenterPanel,
-QWidget#ExportPanelCard,
-QWidget#PseudoPanelCard {
-    background-color: #FFFFFF;
-    border: none;
-    border-radius: 12px;
-}
-
 QDockWidget {
     border: none;
 }
