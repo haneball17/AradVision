@@ -268,11 +268,10 @@ python main.py
 
 ## 项目文档
 
-- [开发计划与里程碑](docs/AradVision开发计划与里程碑.md)
-- [模块接口契约规范](docs/AradVision模块接口契约规范.md)
-- [分模块开发指南](docs/AradVision分模块开发指南.md)
-- [测试策略与验收规范](docs/AradVision测试策略与验收规范.md)
-- [编码规范与风格指南](docs/AradVision编码规范与风格指南.md)
+- [文档导航](docs/README.md)
+- [架构设计文档](docs/AradVision架构设计文档.md)
+- [测试运行指南](docs/测试运行指南.md)
+- [UI 启动指南](docs/UI启动指南.md)
 
 ## 开发者
 

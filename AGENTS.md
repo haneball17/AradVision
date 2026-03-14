@@ -46,6 +46,8 @@ AradVision is a Python project organized by domain modules:
 - 该主题的主方案文档必须命名为：`docs/{代码更改主题}/{代码更改主题}.md`。
 - 与该主题相关的所有文档（方案、实施记录、测试记录、阶段总结、专题工作总结等）必须统一放在 `docs/{代码更改主题}/` 下，不得分散到其他目录。
 - `代码更改主题` 由当前任务目标总结得到，要求语义明确、可追溯，能够直接反映本次改造核心内容。
+- `docs/archive/` 下的归档文档、历史阶段文档和非主线专题，默认不得继续出现在 `README.md`、`docs/README.md`、启动/测试指南、脚本提示语或新的专题方案文档的主索引中。
+- 如确需引用归档文档，必须明确标注“历史参考”或“归档参考”，并说明该文档不能作为当前实现事实来源。
 
 ## Security & Configuration Tips
 - Do not commit runtime artifacts (`__pycache__/`, logs, temporary files) or private/local configs.
