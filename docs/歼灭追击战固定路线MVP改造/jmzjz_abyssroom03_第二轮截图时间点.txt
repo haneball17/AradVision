@@ -1,0 +1,28 @@
+# 格式：<时间> <标签>
+# 时间支持：SS / MM:SS / HH:MM:SS
+
+00:00 town_baseline
+00:12 transition_load_1
+00:15 transition_load_2
+00:17 entry_first_control
+00:30 combat_early
+00:45 route_stage1_a
+01:03 route_stage1_b
+01:16 route_stage1_split
+01:30 combat_mid
+01:44 minimap_mid
+02:00 route_stage2_a
+02:17 route_stage2_b
+02:30 route_stage2_c
+02:45 route_stage2_d
+03:00 route_stage3_a
+03:15 route_stage3_b
+03:30 route_stage3_c
+03:45 route_stage3_d
+04:00 route_endgame_a
+04:15 route_endgame_b
+04:30 route_endgame_c
+04:45 boss_or_clear_candidate
+05:00 result_screen
+05:05 post_result_transition
+05:43 town_return

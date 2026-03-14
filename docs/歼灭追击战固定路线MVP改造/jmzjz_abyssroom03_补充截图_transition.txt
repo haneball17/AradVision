@@ -1,0 +1,17 @@
+# transition 边界补充截图
+
+00:11.0 transition_pre_1
+00:11.5 transition_pre_2
+00:12.0 transition_start
+00:12.5 transition_mid_1
+00:13.0 transition_mid_2
+00:13.5 transition_mid_3
+00:14.0 transition_mid_4
+00:14.5 transition_mid_5
+00:15.0 transition_late_1
+00:15.5 transition_late_2
+00:16.0 transition_late_3
+00:16.5 transition_late_4
+00:17.0 transition_exit
+00:17.5 post_transition_1
+00:18.0 post_transition_2

@@ -1,0 +1,20 @@
+# 终段 clear / boss / result 边界补充截图
+
+04:40.0 endgame_pre_1
+04:41.0 endgame_pre_2
+04:42.0 endgame_pre_3
+04:43.0 endgame_pre_4
+04:44.0 endgame_pre_5
+04:45.0 endgame_candidate_1
+04:46.0 endgame_candidate_2
+04:47.0 endgame_candidate_3
+04:48.0 endgame_candidate_4
+04:49.0 endgame_candidate_5
+04:50.0 endgame_candidate_6
+04:52.0 endgame_candidate_7
+04:54.0 endgame_candidate_8
+04:56.0 endgame_candidate_9
+04:58.0 endgame_candidate_10
+05:00.0 result_entry
+05:02.0 result_mid
+05:04.0 result_late
