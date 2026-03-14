@@ -8,8 +8,8 @@ Dependencies: None
 """
 
 from dataclasses import dataclass, field
-from typing import Tuple, List, Optional, Dict, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class CommandType(Enum):
@@ -32,6 +32,49 @@ class BotState(Enum):
     RECOVERY = 4      # 异常恢复
 
 
+class MainViewState(Enum):
+    """主画面状态。"""
+    COMBAT_ROOM = "combat_room"
+    CLEAR_ROOM = "clear_room"
+    TRANSITION = "transition"
+    BOSS_ROOM = "boss_room"
+    RUN_FINISHED = "run_finished"
+    UNKNOWN = "unknown"
+
+
+class MinimapPathState(Enum):
+    """小地图清房推进状态。"""
+    NEIGHBOR_DARK = "MINIMAP_NEIGHBOR_DARK"
+    NEIGHBOR_FLASH_QMARK = "MINIMAP_NEIGHBOR_FLASH_QMARK"
+    BOSS_ONLY_READY = "MINIMAP_BOSS_ONLY_READY"
+    CLEAR_PENDING = "CLEAR_PENDING"
+    UNKNOWN = "UNKNOWN"
+
+
+class MinimapSpecialState(Enum):
+    """小地图特殊房间状态。"""
+    NONE = "NONE"
+    ABYSS_ROOM_PRESENT = "ABYSS_ROOM_PRESENT"
+
+
+class GuardAction(Enum):
+    """守护层动作。"""
+    NONE = "none"
+    USE_HP_POTION = "use_hp_potion"
+    USE_MP_POTION = "use_mp_potion"
+    ABORT_RUN = "abort_run"
+
+
+class MaintenanceState(Enum):
+    """副本后维护流程状态。"""
+    IDLE = "idle"
+    CHECK_INVENTORY = "check_inventory"
+    OPEN_VENDOR = "open_vendor"
+    SELL_DRY_RUN = "sell_dry_run"
+    REPAIR_AND_RESTOCK = "repair_and_restock"
+    READY_NEXT_RUN = "ready_next_run"
+
+
 class ObjectType(Enum):
     """游戏对象类型"""
     MONSTER = 0
@@ -39,6 +82,37 @@ class ObjectType(Enum):
     ITEM = 2
     GATE = 3
     BOSS = 4
+
+
+@dataclass
+class ROI:
+    """
+    感兴趣区域配置。
+
+    Attributes:
+        x: 左上角 X
+        y: 左上角 Y
+        w: 宽度
+        h: 高度
+    """
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def x2(self) -> int:
+        """右下角 X。"""
+        return self.x + self.w
+
+    @property
+    def y2(self) -> int:
+        """右下角 Y。"""
+        return self.y + self.h
+
+    def to_tuple(self) -> Tuple[int, int, int, int]:
+        """转换为 `(x, y, w, h)`。"""
+        return (self.x, self.y, self.w, self.h)
 
 
 @dataclass
@@ -202,6 +276,28 @@ class PlayerState:
 
 
 @dataclass
+class GuardDecision:
+    """
+    守护层决策。
+
+    Attributes:
+        action: 守护层动作
+        pause_room_logic: 是否暂停房间逻辑
+        key_code: 要触发的按键
+        reason: 决策原因
+    """
+    action: GuardAction = GuardAction.NONE
+    pause_room_logic: bool = False
+    key_code: Optional[str] = None
+    reason: str = ""
+
+    @property
+    def should_abort(self) -> bool:
+        """是否应终止本次运行。"""
+        return self.action == GuardAction.ABORT_RUN
+
+
+@dataclass
 class GameContext:
     """
     游戏上下文 - 每帧状态快照
@@ -226,6 +322,19 @@ class GameContext:
     doors: List[GameObject] = field(default_factory=list)
     player_state: PlayerState = field(default_factory=PlayerState)
     room_cleared: bool = False
+    main_view_state: MainViewState = MainViewState.UNKNOWN
+    minimap_path_state: MinimapPathState = MinimapPathState.UNKNOWN
+    minimap_special_state: MinimapSpecialState = MinimapSpecialState.NONE
+    expected_room_index: int = 1
+    is_last_normal_room: bool = False
+    transition_elapsed_ms: int = 0
+    inventory_weight_ratio: float = 0.0
+    free_slots: int = 999
+    vendor_ui_open: bool = False
+    potion_cd_ready: bool = True
+    potion_stock_available: bool = True
+    guard_decision: GuardDecision = field(default_factory=GuardDecision)
+    maintenance_state: MaintenanceState = MaintenanceState.IDLE
 
     @property
     def has_monsters(self) -> bool:
@@ -256,6 +365,11 @@ class GameContext:
         if not self.hero:
             return []
         return [m for m in self.monsters if self.hero.distance_to(m) <= range_px]
+
+    @property
+    def is_transitioning(self) -> bool:
+        """是否处于过图状态。"""
+        return self.main_view_state == MainViewState.TRANSITION
 
 
 @dataclass(init=False)

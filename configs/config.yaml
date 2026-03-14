@@ -32,9 +32,9 @@ capture:
   # 目标帧率（FPS）
   target_fps: 30
 
-  # 捕获分辨率
-  width: 1920
-  height: 1080
+  # 捕获分辨率（当前 ROI 默认基线为 960x720）
+  width: 960
+  height: 720
 
   # 显示器索引（0=主显示器，1=第二显示器...）
   monitor_index: 1
@@ -94,6 +94,10 @@ input:
     skill_7: "7"
     skill_8: "8"
 
+    # 药水栏
+    potion_1: "1"
+    potion_2: "2"
+
   # 窗口管理
   window:
     check_focus: true       # 是否检查窗口焦点
@@ -127,3 +131,101 @@ system:
 
   # 紧急停止按键
   kill_switch_key: F12
+
+# ==================== 固定路线副本 MVP 配置 ====================
+dungeon_run:
+  # 当前主链路是否启用固定路线 MVP 管线
+  enabled: true
+
+  # 副本标识
+  dungeon_id: jmzjz
+
+  # 当前路线策略标签
+  route_policy_tag: fixed_full_clear
+
+  # 从第几个房间开始
+  start_room_index: 1
+
+  # 主画面状态识别
+  main_view:
+    # 以下 ROI 需要按你的实际分辨率和 HUD 重新标定
+    transition_roi: [390, 300, 180, 120]
+    clear_roi: [360, 95, 240, 90]
+    boss_roi: [600, 0, 340, 80]
+    finish_roi: [610, 520, 230, 120]
+
+    # 首版使用固定 ROI + 颜色规则；模板匹配可后续按需补充
+    transition_dark_threshold: 40.0
+    clear_blue_ratio_threshold: 0.42
+    boss_red_ratio_threshold: 0.42
+    finish_green_ratio_threshold: 0.42
+    stable_frames: 3
+
+  # 小地图校验模块
+  minimap:
+    outer: [719, 39, 201, 110]
+    inner: [742, 60, 132, 35]
+    neighbor_roi: [740, 58, 155, 48]
+    special_roi: [880, 58, 26, 26]
+    resize_scale: 2
+    dark_threshold: 55.0
+    flash_brightness_threshold: 200.0
+    boss_red_ratio_threshold: 0.44
+    special_green_ratio_threshold: 0.44
+    stable_frames: 8
+    pending_timeout_ms: 400
+
+  # 固定 UI ROI
+  ui_rois:
+    hp_bar: [31, 680, 145, 14]
+    mp_bar: [784, 680, 145, 14]
+    inventory_weight_bar: [812, 618, 110, 20]
+    vendor_flag: [650, 150, 170, 70]
+    potion_flag: [118, 606, 120, 44]
+
+  # 守护层阈值
+  guard_thresholds:
+    hp_critical_threshold: 0.25
+    hp_low_threshold: 0.45
+    mp_low_threshold: 0.20
+    potion_cooldown_ms: 1200
+
+  # 当前职业画像
+  class_profile:
+    name: map_wide_attack_current_class
+    requires_mp: false
+    primary_combat_skill: 1
+    combat_interval_ms: 450
+
+  # 副本后维护流程
+  maintenance:
+    sell_dry_run: true
+    sell_rarity_threshold: uncommon
+    max_weight_ratio: 0.85
+    min_free_slots: 8
+    min_potion_stock: 3
+
+  # 固定路线房间脚本
+  # 注意：这里先提供结构示例，真实《歼灭追击战》路线需要按实测逐房间补齐
+  room_scripts:
+    - room_idx: 1
+      room_type: normal
+      expected_exit_direction: RIGHT
+      exit_action_template: move_right_hold_1200
+      door_confirmation_roi: [640, 220, 180, 180]
+      transition_timeout_ms: 1800
+      is_last_normal_room: false
+      route_policy_tag: fixed_full_clear
+      room_feature_tag: normal
+      next_step: go_next_normal
+
+    - room_idx: 2
+      room_type: boss
+      expected_exit_direction: STOP
+      exit_action_template: none
+      door_confirmation_roi: [640, 220, 180, 180]
+      transition_timeout_ms: 1800
+      is_last_normal_room: false
+      route_policy_tag: fixed_full_clear
+      room_feature_tag: boss
+      next_step: stop_after_finish

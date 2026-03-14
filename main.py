@@ -68,6 +68,7 @@ except ImportError:
 # 导入决策层模块
 from logic.world_model import WorldModel
 from logic.bot_fsm import BotFSM
+from logic.fixed_route_pipeline import FixedRoutePipeline
 
 # 导入检测器抽象基类
 from vision.base_detector import BaseDetector
@@ -124,6 +125,7 @@ class AradVisionApp:
         self._detector: Optional[BaseDetector] = None
         self._world_model: Optional[WorldModel] = None
         self._fsm: Optional[BotFSM] = None
+        self._fixed_route_pipeline: Optional[FixedRoutePipeline] = None
         self._input_driver: Optional[BaseInputDriver] = None
 
         # 引擎线程（仅 UI 模式）
@@ -194,6 +196,13 @@ class AradVisionApp:
             self._input_driver = self._create_input_driver()
             logger.info("✓ 输入驱动初始化成功")
 
+            # 6. 初始化固定路线 MVP 运行管线
+            self._fixed_route_pipeline = FixedRoutePipeline(
+                config=self.config_loader.config,
+                detector=self._detector,
+            )
+            logger.info("✓ 固定路线 MVP 管线初始化成功")
+
             logger.info("=" * 60)
             logger.info("所有模块初始化完成")
             logger.info("=" * 60)
@@ -210,7 +219,7 @@ class AradVisionApp:
         """
         根据配置创建检测器。
 
-        当前仅内置 Mock 检测器；当配置为 yolo 但实现不可用时自动降级。
+        当前检测器主要用于兼容调试与对象统计；主运行链路不依赖它做决策。
         """
         detector_type = self.config_loader.config.detector.type.lower()
         if detector_type == "mock":
@@ -438,20 +447,14 @@ class AradVisionApp:
                     time.sleep(0.01)
                     continue
 
-                # 2. 检测游戏对象
-                detections = self._detector.detect(frame)
-                logger.debug(f"检测到 {len(detections)} 个对象")
-
-                # 3. 更新游戏上下文
-                context = self._world_model.update(detections, frame)
+                # 2-4. 执行固定路线 MVP 识别与决策逻辑
+                context, command = self._fixed_route_pipeline.process_frame(frame)
                 logger.debug(
                     f"上下文: frame={context.frame_index}, "
-                    f"monsters={len(context.monsters)}, "
-                    f"state={self._fsm.current_state.name}"
+                    f"main_view={context.main_view_state.value}, "
+                    f"room_idx={context.expected_room_index}, "
+                    f"minimap={context.minimap_path_state.value}"
                 )
-
-                # 4. 执行决策逻辑（状态机更新）
-                command = self._fsm.update(context)
 
                 # 5. 执行 FSM 输出指令（避免二次决策导致语义漂移）
                 if command is not None:
@@ -480,7 +483,9 @@ class AradVisionApp:
                         f"FrameTime: {frame_time*1000:.1f}ms | "
                         f"CaptureLatency: {stats.avg_latency:.1f}ms | "
                         f"Frames: {frame_count} | "
-                        f"State: {self._fsm.current_state.name}"
+                        f"MainView: {context.main_view_state.value} | "
+                        f"Room: {context.expected_room_index} | "
+                        f"Maintenance: {context.maintenance_state.value}"
                     )
 
             except EmergencyStopException:

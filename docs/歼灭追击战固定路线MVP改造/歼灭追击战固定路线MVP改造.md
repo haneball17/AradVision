@@ -118,6 +118,7 @@ Capture
 
 ## 6. 当前遗留项
 
-- `configs/config.yaml` 中 ROI 和房间脚本仍需按真实分辨率重新标定
+- `configs/config.yaml` 中 ROI 和房间脚本仍需结合真实运行分辨率继续复核
+- ROI 复核流程改由 `CVAT` 承担，仓库内不再维护专用离线 ROI 标定工具
 - 维护流程当前只做 dry run 状态切换和日志输出，不执行真实出售
 - 通用 YOLO 仍保留为后续目标，不在本专题展开

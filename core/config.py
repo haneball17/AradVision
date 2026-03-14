@@ -11,13 +11,15 @@ Dependencies: pyyaml, core/exceptions.py, core/logger.py
 """
 
 import os
-import yaml
-from pathlib import Path
-from typing import Any, Dict, Optional, Type, TypeVar
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TypeVar
+
+import yaml
 
 from core.exceptions import ConfigurationError
 from core.logger import logger
+from core.types import ROI
 
 T = TypeVar('T')
 
@@ -41,8 +43,8 @@ class CaptureConfig:
     window_title: str = "地下城与勇士"
     window_class: str = "D3D Window"
     target_fps: int = 30
-    width: int = 1920
-    height: int = 1080
+    width: int = 960
+    height: int = 720
     monitor_index: int = 1
     use_mock: bool = False  # 是否使用 Mock 捕获引擎
     backend: str = "auto"  # auto, wgc, mss
@@ -126,6 +128,128 @@ class SystemConfig:
 
 
 @dataclass
+class TemplateMatchConfig:
+    """模板匹配配置。"""
+    path: str = ""
+    threshold: float = 0.92
+
+
+@dataclass
+class MainViewConfig:
+    """主画面状态识别配置。"""
+    transition_roi: ROI = field(default_factory=lambda: ROI(390, 300, 180, 120))
+    clear_roi: ROI = field(default_factory=lambda: ROI(360, 95, 240, 90))
+    boss_roi: ROI = field(default_factory=lambda: ROI(600, 0, 340, 80))
+    finish_roi: ROI = field(default_factory=lambda: ROI(610, 520, 230, 120))
+    transition_dark_threshold: float = 40.0
+    clear_blue_ratio_threshold: float = 0.42
+    boss_red_ratio_threshold: float = 0.42
+    finish_green_ratio_threshold: float = 0.42
+    stable_frames: int = 3
+    transition_template: TemplateMatchConfig = field(default_factory=TemplateMatchConfig)
+    clear_template: TemplateMatchConfig = field(default_factory=TemplateMatchConfig)
+    boss_template: TemplateMatchConfig = field(default_factory=TemplateMatchConfig)
+    finish_template: TemplateMatchConfig = field(default_factory=TemplateMatchConfig)
+
+
+@dataclass
+class MinimapConfig:
+    """小地图识别配置。"""
+    outer: ROI = field(default_factory=lambda: ROI(719, 39, 201, 110))
+    inner: ROI = field(default_factory=lambda: ROI(742, 60, 132, 35))
+    neighbor_roi: ROI = field(default_factory=lambda: ROI(740, 58, 155, 48))
+    special_roi: ROI = field(default_factory=lambda: ROI(880, 58, 26, 26))
+    resize_scale: int = 2
+    dark_threshold: float = 55.0
+    flash_brightness_threshold: float = 200.0
+    boss_red_ratio_threshold: float = 0.44
+    special_green_ratio_threshold: float = 0.44
+    stable_frames: int = 8
+    pending_timeout_ms: int = 400
+
+
+@dataclass
+class UIRoisConfig:
+    """UI 固定 ROI 配置。"""
+    hp_bar: ROI = field(default_factory=lambda: ROI(31, 680, 145, 14))
+    mp_bar: ROI = field(default_factory=lambda: ROI(784, 680, 145, 14))
+    inventory_weight_bar: ROI = field(default_factory=lambda: ROI(812, 618, 110, 20))
+    vendor_flag: ROI = field(default_factory=lambda: ROI(650, 150, 170, 70))
+    potion_flag: ROI = field(default_factory=lambda: ROI(118, 606, 120, 44))
+
+
+@dataclass
+class GuardThresholdsConfig:
+    """守护层阈值配置。"""
+    hp_critical_threshold: float = 0.25
+    hp_low_threshold: float = 0.45
+    mp_low_threshold: float = 0.20
+    potion_cooldown_ms: int = 1200
+
+
+@dataclass
+class ClassProfileConfig:
+    """职业配置。"""
+    name: str = "map_wide_attack_current_class"
+    requires_mp: bool = False
+    primary_combat_skill: int = 1
+    combat_interval_ms: int = 450
+
+
+@dataclass
+class RoomScriptConfig:
+    """固定路线房间脚本。"""
+    room_idx: int
+    room_type: str = "normal"
+    expected_exit_direction: str = "RIGHT"
+    exit_action_template: str = "move_right_hold_1200"
+    door_confirmation_roi: ROI = field(default_factory=lambda: ROI(640, 220, 180, 180))
+    transition_timeout_ms: int = 1800
+    is_last_normal_room: bool = False
+    route_policy_tag: str = "fixed_full_clear"
+    room_feature_tag: str = "normal"
+    next_step: str = "go_next_normal"
+
+
+@dataclass
+class MaintenanceConfig:
+    """维护流程配置。"""
+    sell_dry_run: bool = True
+    sell_rarity_threshold: str = "uncommon"
+    max_weight_ratio: float = 0.85
+    min_free_slots: int = 8
+    min_potion_stock: int = 3
+
+
+@dataclass
+class DungeonRunConfig:
+    """固定路线副本配置。"""
+    enabled: bool = True
+    dungeon_id: str = "jmzjz"
+    route_policy_tag: str = "fixed_full_clear"
+    start_room_index: int = 1
+    main_view: MainViewConfig = field(default_factory=MainViewConfig)
+    minimap: MinimapConfig = field(default_factory=MinimapConfig)
+    ui_rois: UIRoisConfig = field(default_factory=UIRoisConfig)
+    guard_thresholds: GuardThresholdsConfig = field(default_factory=GuardThresholdsConfig)
+    class_profile: ClassProfileConfig = field(default_factory=ClassProfileConfig)
+    maintenance: MaintenanceConfig = field(default_factory=MaintenanceConfig)
+    room_scripts: List[RoomScriptConfig] = field(
+        default_factory=lambda: [
+            RoomScriptConfig(room_idx=1),
+            RoomScriptConfig(
+                room_idx=2,
+                room_type="boss",
+                expected_exit_direction="STOP",
+                exit_action_template="none",
+                transition_timeout_ms=1800,
+                next_step="stop_after_finish",
+            ),
+        ]
+    )
+
+
+@dataclass
 class AppConfig:
     """应用配置（根配置）"""
     detector: DetectorConfig = field(default_factory=DetectorConfig)
@@ -133,6 +257,7 @@ class AppConfig:
     input: InputConfig = field(default_factory=InputConfig)
     combat: CombatConfig = field(default_factory=CombatConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
+    dungeon_run: DungeonRunConfig = field(default_factory=DungeonRunConfig)
 
 
 # ==================== 配置加载器 ====================
@@ -205,6 +330,8 @@ class ConfigLoader:
             if data is None:
                 data = {}
 
+            # 每次加载都从默认配置重新开始，避免单例跨测试残留状态。
+            self._config = AppConfig()
             self._parse_config(data)
             self._config_path = config_file
             self._validate_config()
@@ -238,8 +365,8 @@ class ConfigLoader:
                 window_title=capture_data.get('window_title', '地下城与勇士'),
                 window_class=capture_data.get('window_class', 'D3D Window'),
                 target_fps=capture_data.get('target_fps', 30),
-                width=capture_data.get('width', 1920),
-                height=capture_data.get('height', 1080),
+                width=capture_data.get('width', 960),
+                height=capture_data.get('height', 720),
                 monitor_index=capture_data.get('monitor_index', 1),
                 use_mock=capture_data.get('use_mock', False),
                 backend=capture_data.get('backend', 'auto'),
@@ -283,6 +410,10 @@ class ConfigLoader:
                 kill_switch_key=system_data.get('kill_switch_key', 'F12')
             )
 
+        # 解析固定路线副本配置
+        if 'dungeon_run' in data:
+            self._config.dungeon_run = self._parse_dungeon_run(data['dungeon_run'])
+
     def _parse_key_bindings(self, key_bindings_data: Dict[str, Any]) -> KeyBindingsConfig:
         """
         解析按键绑定配置
@@ -322,6 +453,189 @@ class ConfigLoader:
             potion_6=key_bindings_data.get('potion_6', '6'),
         )
 
+    @staticmethod
+    def _parse_roi(roi_data: Any, default: ROI) -> ROI:
+        """解析 ROI 配置。"""
+        if roi_data is None:
+            return default
+        if isinstance(roi_data, ROI):
+            return roi_data
+        if isinstance(roi_data, (list, tuple)) and len(roi_data) == 4:
+            return ROI(int(roi_data[0]), int(roi_data[1]), int(roi_data[2]), int(roi_data[3]))
+        if isinstance(roi_data, dict):
+            return ROI(
+                int(roi_data.get('x', default.x)),
+                int(roi_data.get('y', default.y)),
+                int(roi_data.get('w', default.w)),
+                int(roi_data.get('h', default.h)),
+            )
+        raise ConfigurationError(f"无法解析 ROI 配置: {roi_data}")
+
+    @staticmethod
+    def _parse_template(template_data: Optional[Dict[str, Any]]) -> TemplateMatchConfig:
+        """解析模板匹配配置。"""
+        if not template_data:
+            return TemplateMatchConfig()
+        return TemplateMatchConfig(
+            path=str(template_data.get('path', '')),
+            threshold=float(template_data.get('threshold', 0.92)),
+        )
+
+    def _parse_main_view(self, data: Dict[str, Any]) -> MainViewConfig:
+        """解析主画面状态配置。"""
+        default = MainViewConfig()
+        return MainViewConfig(
+            transition_roi=self._parse_roi(data.get('transition_roi'), default.transition_roi),
+            clear_roi=self._parse_roi(data.get('clear_roi'), default.clear_roi),
+            boss_roi=self._parse_roi(data.get('boss_roi'), default.boss_roi),
+            finish_roi=self._parse_roi(data.get('finish_roi'), default.finish_roi),
+            transition_dark_threshold=float(
+                data.get('transition_dark_threshold', default.transition_dark_threshold)
+            ),
+            clear_blue_ratio_threshold=float(
+                data.get('clear_blue_ratio_threshold', default.clear_blue_ratio_threshold)
+            ),
+            boss_red_ratio_threshold=float(
+                data.get('boss_red_ratio_threshold', default.boss_red_ratio_threshold)
+            ),
+            finish_green_ratio_threshold=float(
+                data.get('finish_green_ratio_threshold', default.finish_green_ratio_threshold)
+            ),
+            stable_frames=int(data.get('stable_frames', default.stable_frames)),
+            transition_template=self._parse_template(data.get('transition_template')),
+            clear_template=self._parse_template(data.get('clear_template')),
+            boss_template=self._parse_template(data.get('boss_template')),
+            finish_template=self._parse_template(data.get('finish_template')),
+        )
+
+    def _parse_minimap(self, data: Dict[str, Any]) -> MinimapConfig:
+        """解析小地图配置。"""
+        default = MinimapConfig()
+        return MinimapConfig(
+            outer=self._parse_roi(data.get('outer'), default.outer),
+            inner=self._parse_roi(data.get('inner'), default.inner),
+            neighbor_roi=self._parse_roi(data.get('neighbor_roi'), default.neighbor_roi),
+            special_roi=self._parse_roi(data.get('special_roi'), default.special_roi),
+            resize_scale=int(data.get('resize_scale', default.resize_scale)),
+            dark_threshold=float(data.get('dark_threshold', default.dark_threshold)),
+            flash_brightness_threshold=float(
+                data.get('flash_brightness_threshold', default.flash_brightness_threshold)
+            ),
+            boss_red_ratio_threshold=float(
+                data.get('boss_red_ratio_threshold', default.boss_red_ratio_threshold)
+            ),
+            special_green_ratio_threshold=float(
+                data.get('special_green_ratio_threshold', default.special_green_ratio_threshold)
+            ),
+            stable_frames=int(data.get('stable_frames', default.stable_frames)),
+            pending_timeout_ms=int(data.get('pending_timeout_ms', default.pending_timeout_ms)),
+        )
+
+    def _parse_ui_rois(self, data: Dict[str, Any]) -> UIRoisConfig:
+        """解析 UI ROI 配置。"""
+        default = UIRoisConfig()
+        return UIRoisConfig(
+            hp_bar=self._parse_roi(data.get('hp_bar'), default.hp_bar),
+            mp_bar=self._parse_roi(data.get('mp_bar'), default.mp_bar),
+            inventory_weight_bar=self._parse_roi(
+                data.get('inventory_weight_bar'),
+                default.inventory_weight_bar,
+            ),
+            vendor_flag=self._parse_roi(data.get('vendor_flag'), default.vendor_flag),
+            potion_flag=self._parse_roi(data.get('potion_flag'), default.potion_flag),
+        )
+
+    @staticmethod
+    def _parse_guard_thresholds(data: Dict[str, Any]) -> GuardThresholdsConfig:
+        """解析守护层阈值配置。"""
+        default = GuardThresholdsConfig()
+        return GuardThresholdsConfig(
+            hp_critical_threshold=float(
+                data.get('hp_critical_threshold', default.hp_critical_threshold)
+            ),
+            hp_low_threshold=float(data.get('hp_low_threshold', default.hp_low_threshold)),
+            mp_low_threshold=float(data.get('mp_low_threshold', default.mp_low_threshold)),
+            potion_cooldown_ms=int(data.get('potion_cooldown_ms', default.potion_cooldown_ms)),
+        )
+
+    @staticmethod
+    def _parse_class_profile(data: Dict[str, Any]) -> ClassProfileConfig:
+        """解析职业配置。"""
+        default = ClassProfileConfig()
+        return ClassProfileConfig(
+            name=str(data.get('name', default.name)),
+            requires_mp=bool(data.get('requires_mp', default.requires_mp)),
+            primary_combat_skill=int(
+                data.get('primary_combat_skill', default.primary_combat_skill)
+            ),
+            combat_interval_ms=int(
+                data.get('combat_interval_ms', default.combat_interval_ms)
+            ),
+        )
+
+    def _parse_room_script(self, data: Dict[str, Any]) -> RoomScriptConfig:
+        """解析单个房间脚本。"""
+        default = RoomScriptConfig(room_idx=int(data.get('room_idx', 1)))
+        return RoomScriptConfig(
+            room_idx=int(data.get('room_idx', 1)),
+            room_type=str(data.get('room_type', default.room_type)),
+            expected_exit_direction=str(
+                data.get('expected_exit_direction', default.expected_exit_direction)
+            ),
+            exit_action_template=str(
+                data.get('exit_action_template', default.exit_action_template)
+            ),
+            door_confirmation_roi=self._parse_roi(
+                data.get('door_confirmation_roi'),
+                default.door_confirmation_roi,
+            ),
+            transition_timeout_ms=int(
+                data.get('transition_timeout_ms', default.transition_timeout_ms)
+            ),
+            is_last_normal_room=bool(
+                data.get('is_last_normal_room', default.is_last_normal_room)
+            ),
+            route_policy_tag=str(data.get('route_policy_tag', default.route_policy_tag)),
+            room_feature_tag=str(data.get('room_feature_tag', default.room_feature_tag)),
+            next_step=str(data.get('next_step', default.next_step)),
+        )
+
+    @staticmethod
+    def _parse_maintenance(data: Dict[str, Any]) -> MaintenanceConfig:
+        """解析维护配置。"""
+        default = MaintenanceConfig()
+        return MaintenanceConfig(
+            sell_dry_run=bool(data.get('sell_dry_run', default.sell_dry_run)),
+            sell_rarity_threshold=str(
+                data.get('sell_rarity_threshold', default.sell_rarity_threshold)
+            ),
+            max_weight_ratio=float(data.get('max_weight_ratio', default.max_weight_ratio)),
+            min_free_slots=int(data.get('min_free_slots', default.min_free_slots)),
+            min_potion_stock=int(data.get('min_potion_stock', default.min_potion_stock)),
+        )
+
+    def _parse_dungeon_run(self, data: Dict[str, Any]) -> DungeonRunConfig:
+        """解析固定路线副本配置。"""
+        default = DungeonRunConfig()
+        room_scripts = data.get('room_scripts', [])
+        parsed_room_scripts = [self._parse_room_script(item) for item in room_scripts]
+        if not parsed_room_scripts:
+            parsed_room_scripts = default.room_scripts
+
+        return DungeonRunConfig(
+            enabled=bool(data.get('enabled', default.enabled)),
+            dungeon_id=str(data.get('dungeon_id', default.dungeon_id)),
+            route_policy_tag=str(data.get('route_policy_tag', default.route_policy_tag)),
+            start_room_index=int(data.get('start_room_index', default.start_room_index)),
+            main_view=self._parse_main_view(data.get('main_view', {})),
+            minimap=self._parse_minimap(data.get('minimap', {})),
+            ui_rois=self._parse_ui_rois(data.get('ui_rois', {})),
+            guard_thresholds=self._parse_guard_thresholds(data.get('guard_thresholds', {})),
+            class_profile=self._parse_class_profile(data.get('class_profile', {})),
+            maintenance=self._parse_maintenance(data.get('maintenance', {})),
+            room_scripts=parsed_room_scripts,
+        )
+
     def _validate_config(self) -> None:
         """验证配置有效性"""
         # 验证检测器配置
@@ -334,6 +648,8 @@ class ConfigLoader:
         # 验证截图配置
         if self._config.capture.target_fps <= 0:
             raise ConfigurationError("目标 FPS 必须大于 0")
+        if self._config.capture.width <= 0 or self._config.capture.height <= 0:
+            raise ConfigurationError("capture.width 和 capture.height 必须大于 0")
         if self._config.capture.backend not in {"auto", "wgc", "mss"}:
             raise ConfigurationError("capture.backend 必须是 auto/wgc/mss")
 
@@ -343,6 +659,57 @@ class ConfigLoader:
 
         if self._config.combat.attack_range <= 0:
             raise ConfigurationError("攻击距离必须大于 0")
+
+        if not 0 <= self._config.dungeon_run.guard_thresholds.hp_critical_threshold <= 1:
+            raise ConfigurationError("hp_critical_threshold 必须在 [0, 1] 范围内")
+        if not 0 <= self._config.dungeon_run.guard_thresholds.hp_low_threshold <= 1:
+            raise ConfigurationError("hp_low_threshold 必须在 [0, 1] 范围内")
+        if not 0 <= self._config.dungeon_run.guard_thresholds.mp_low_threshold <= 1:
+            raise ConfigurationError("mp_low_threshold 必须在 [0, 1] 范围内")
+        if self._config.dungeon_run.guard_thresholds.hp_critical_threshold > self._config.dungeon_run.guard_thresholds.hp_low_threshold:
+            raise ConfigurationError("hp_critical_threshold 不能高于 hp_low_threshold")
+        if not self._config.dungeon_run.room_scripts:
+            raise ConfigurationError("dungeon_run.room_scripts 不能为空")
+
+        capture_width = self._config.capture.width
+        capture_height = self._config.capture.height
+        roi_entries = [
+            ("dungeon_run.main_view.transition_roi", self._config.dungeon_run.main_view.transition_roi),
+            ("dungeon_run.main_view.clear_roi", self._config.dungeon_run.main_view.clear_roi),
+            ("dungeon_run.main_view.boss_roi", self._config.dungeon_run.main_view.boss_roi),
+            ("dungeon_run.main_view.finish_roi", self._config.dungeon_run.main_view.finish_roi),
+            ("dungeon_run.minimap.outer", self._config.dungeon_run.minimap.outer),
+            ("dungeon_run.minimap.inner", self._config.dungeon_run.minimap.inner),
+            ("dungeon_run.minimap.neighbor_roi", self._config.dungeon_run.minimap.neighbor_roi),
+            ("dungeon_run.minimap.special_roi", self._config.dungeon_run.minimap.special_roi),
+            ("dungeon_run.ui_rois.hp_bar", self._config.dungeon_run.ui_rois.hp_bar),
+            ("dungeon_run.ui_rois.mp_bar", self._config.dungeon_run.ui_rois.mp_bar),
+            (
+                "dungeon_run.ui_rois.inventory_weight_bar",
+                self._config.dungeon_run.ui_rois.inventory_weight_bar,
+            ),
+            ("dungeon_run.ui_rois.vendor_flag", self._config.dungeon_run.ui_rois.vendor_flag),
+            ("dungeon_run.ui_rois.potion_flag", self._config.dungeon_run.ui_rois.potion_flag),
+        ]
+        for room_script in self._config.dungeon_run.room_scripts:
+            roi_entries.append(
+                (
+                    f"dungeon_run.room_scripts[{room_script.room_idx}].door_confirmation_roi",
+                    room_script.door_confirmation_roi,
+                )
+            )
+
+        for roi_name, roi in roi_entries:
+            if min(roi.x, roi.y, roi.w, roi.h) < 0:
+                raise ConfigurationError(f"{roi_name} 坐标和尺寸不能为负数")
+            if roi.w <= 0 or roi.h <= 0:
+                raise ConfigurationError(f"{roi_name} 宽高必须大于 0")
+            if roi.x2 > capture_width or roi.y2 > capture_height:
+                raise ConfigurationError(
+                    f"{roi_name} 超出 capture 分辨率边界: "
+                    f"roi=({roi.x},{roi.y},{roi.w},{roi.h}), "
+                    f"capture=({capture_width},{capture_height})"
+                )
 
         logger.debug("配置验证通过")
 
@@ -363,8 +730,8 @@ class ConfigLoader:
                 'window_title': '地下城与勇士',
                 'window_class': 'D3D Window',
                 'target_fps': 30,
-                'width': 1920,
-                'height': 1080,
+                'width': 960,
+                'height': 720,
                 'monitor_index': 1,
                 'use_mock': False,
                 'backend': 'auto',
@@ -389,7 +756,89 @@ class ConfigLoader:
                 'log_level': 'INFO',
                 'enable_overlay': False,
                 'kill_switch_key': 'F12'
-            }
+            },
+            'dungeon_run': {
+                'enabled': True,
+                'dungeon_id': 'jmzjz',
+                'route_policy_tag': 'fixed_full_clear',
+                'start_room_index': 1,
+                'main_view': {
+                    'transition_roi': [390, 300, 180, 120],
+                    'clear_roi': [360, 95, 240, 90],
+                    'boss_roi': [600, 0, 340, 80],
+                    'finish_roi': [610, 520, 230, 120],
+                    'transition_dark_threshold': 40.0,
+                    'clear_blue_ratio_threshold': 0.42,
+                    'boss_red_ratio_threshold': 0.42,
+                    'finish_green_ratio_threshold': 0.42,
+                    'stable_frames': 3,
+                },
+                'minimap': {
+                    'outer': [719, 39, 201, 110],
+                    'inner': [742, 60, 132, 35],
+                    'neighbor_roi': [740, 58, 155, 48],
+                    'special_roi': [880, 58, 26, 26],
+                    'resize_scale': 2,
+                    'dark_threshold': 55.0,
+                    'flash_brightness_threshold': 200.0,
+                    'boss_red_ratio_threshold': 0.44,
+                    'special_green_ratio_threshold': 0.44,
+                    'stable_frames': 8,
+                    'pending_timeout_ms': 400,
+                },
+                'ui_rois': {
+                    'hp_bar': [31, 680, 145, 14],
+                    'mp_bar': [784, 680, 145, 14],
+                    'inventory_weight_bar': [812, 618, 110, 20],
+                    'vendor_flag': [650, 150, 170, 70],
+                    'potion_flag': [118, 606, 120, 44],
+                },
+                'guard_thresholds': {
+                    'hp_critical_threshold': 0.25,
+                    'hp_low_threshold': 0.45,
+                    'mp_low_threshold': 0.20,
+                    'potion_cooldown_ms': 1200,
+                },
+                'class_profile': {
+                    'name': 'map_wide_attack_current_class',
+                    'requires_mp': False,
+                    'primary_combat_skill': 1,
+                    'combat_interval_ms': 450,
+                },
+                'maintenance': {
+                    'sell_dry_run': True,
+                    'sell_rarity_threshold': 'uncommon',
+                    'max_weight_ratio': 0.85,
+                    'min_free_slots': 8,
+                    'min_potion_stock': 3,
+                },
+                'room_scripts': [
+                    {
+                        'room_idx': 1,
+                        'room_type': 'normal',
+                        'expected_exit_direction': 'RIGHT',
+                        'exit_action_template': 'move_right_hold_1200',
+                        'door_confirmation_roi': [640, 220, 180, 180],
+                        'transition_timeout_ms': 1800,
+                        'is_last_normal_room': False,
+                        'route_policy_tag': 'fixed_full_clear',
+                        'room_feature_tag': 'normal',
+                        'next_step': 'go_next_normal',
+                    },
+                    {
+                        'room_idx': 2,
+                        'room_type': 'boss',
+                        'expected_exit_direction': 'STOP',
+                        'exit_action_template': 'none',
+                        'door_confirmation_roi': [640, 220, 180, 180],
+                        'transition_timeout_ms': 1800,
+                        'is_last_normal_room': False,
+                        'route_policy_tag': 'fixed_full_clear',
+                        'room_feature_tag': 'boss',
+                        'next_step': 'stop_after_finish',
+                    },
+                ],
+            },
         }
 
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -448,6 +897,11 @@ class ConfigLoader:
         """快捷访问：系统配置"""
         return self._config.system
 
+    @property
+    def dungeon_run(self) -> DungeonRunConfig:
+        """快捷访问：固定路线副本配置。"""
+        return self._config.dungeon_run
+
 
 # ==================== 全局单例访问 ====================
 
@@ -491,6 +945,15 @@ __all__ = [
     "InputConfig",
     "CombatConfig",
     "SystemConfig",
+    "TemplateMatchConfig",
+    "MainViewConfig",
+    "MinimapConfig",
+    "UIRoisConfig",
+    "GuardThresholdsConfig",
+    "ClassProfileConfig",
+    "RoomScriptConfig",
+    "MaintenanceConfig",
+    "DungeonRunConfig",
     "get_config",
     "reload_config"
 ]

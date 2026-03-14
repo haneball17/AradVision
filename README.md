@@ -69,6 +69,7 @@ python3 scripts/test_pyqt_ui.py
 ## 文档
 
 - [文档导航](docs/README.md)
+- [项目整体情况说明书](docs/项目整体情况说明书/项目整体情况说明书.md)
 - [架构设计文档](docs/AradVision架构设计文档.md)
 - [测试运行指南](docs/测试运行指南.md)
 - [UI 启动指南](docs/UI启动指南.md)

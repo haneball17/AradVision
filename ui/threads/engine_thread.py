@@ -22,6 +22,7 @@ try:
     from vision.mock_detector import MockYoloDetector
     from logic.world_model import WorldModel
     from logic.bot_fsm import BotFSM
+    from logic.fixed_route_pipeline import FixedRoutePipeline
     from input.mock_driver import MockInputDriver
     from input.base_driver import BaseInputDriver
 except ImportError as e:
@@ -148,12 +149,14 @@ class EngineThread(QThread):
             world_model = WorldModel(room_clear_timeout=2.0, history_length=30)
             fsm = BotFSM()
             input_driver = self._create_input_driver()
+            pipeline = FixedRoutePipeline(config=self.config, detector=detector)
 
             logger.info("所有核心模块初始化完成")
 
             # 保存到实例变量以便其他方法访问
             self._fsm = fsm
             self._world_model = world_model
+            self._pipeline = pipeline
 
             # 启动信号
             self._running = True
@@ -180,14 +183,8 @@ class EngineThread(QThread):
                         time.sleep(0.1)
                         continue
 
-                    # ========== 2. 目标检测 ==========
-                    detections = detector.detect(frame)
-
-                    # ========== 3. 世界模型更新 ==========
-                    context = world_model.update(detections)
-
-                    # ========== 4. 状态机决策 ==========
-                    command = fsm.update(context)
+                    # ========== 2-4. 固定路线 MVP 主链路 ==========
+                    context, command = pipeline.process_frame(frame)
 
                     # ========== 5. 输入执行 ==========
                     input_driver.execute(command)
@@ -335,12 +332,15 @@ class EngineThread(QThread):
             "fps": fps,
             "frame_count": self._frame_count,
             "run_time": time.time() - self._start_time if self._start_time else 0,
-            "state": self._fsm.current_state.name if hasattr(self._fsm, "current_state") else "UNKNOWN",
+            "state": context.main_view_state.value,
             "hero_detected": hero is not None,
             "monster_count": len(monsters),
             "item_count": len(items),
             "door_count": len(doors),
             "room_cleared": context.room_cleared,
+            "room_index": context.expected_room_index,
+            "minimap_state": context.minimap_path_state.value,
+            "maintenance_state": context.maintenance_state.value,
             "paused": self._paused
         }
 
