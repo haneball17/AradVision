@@ -173,9 +173,10 @@ class UIRoisConfig:
     """UI 固定 ROI 配置。"""
     hp_bar: ROI = field(default_factory=lambda: ROI(31, 680, 145, 14))
     mp_bar: ROI = field(default_factory=lambda: ROI(784, 680, 145, 14))
-    inventory_weight_bar: ROI = field(default_factory=lambda: ROI(812, 618, 110, 20))
-    vendor_flag: ROI = field(default_factory=lambda: ROI(650, 150, 170, 70))
-    potion_flag: ROI = field(default_factory=lambda: ROI(118, 606, 120, 44))
+    inventory_flag: ROI = field(default_factory=lambda: ROI(540, 58, 250, 24))
+    inventory_weight_bar: ROI = field(default_factory=lambda: ROI(523, 546, 160, 20))
+    vendor_flag: ROI = field(default_factory=lambda: ROI(84, 606, 372, 46))
+    potion_flag: ROI = field(default_factory=lambda: ROI(130, 632, 48, 42))
 
 
 @dataclass
@@ -537,6 +538,7 @@ class ConfigLoader:
         return UIRoisConfig(
             hp_bar=self._parse_roi(data.get('hp_bar'), default.hp_bar),
             mp_bar=self._parse_roi(data.get('mp_bar'), default.mp_bar),
+            inventory_flag=self._parse_roi(data.get('inventory_flag'), default.inventory_flag),
             inventory_weight_bar=self._parse_roi(
                 data.get('inventory_weight_bar'),
                 default.inventory_weight_bar,
@@ -684,6 +686,7 @@ class ConfigLoader:
             ("dungeon_run.minimap.special_roi", self._config.dungeon_run.minimap.special_roi),
             ("dungeon_run.ui_rois.hp_bar", self._config.dungeon_run.ui_rois.hp_bar),
             ("dungeon_run.ui_rois.mp_bar", self._config.dungeon_run.ui_rois.mp_bar),
+            ("dungeon_run.ui_rois.inventory_flag", self._config.dungeon_run.ui_rois.inventory_flag),
             (
                 "dungeon_run.ui_rois.inventory_weight_bar",
                 self._config.dungeon_run.ui_rois.inventory_weight_bar,
@@ -789,9 +792,10 @@ class ConfigLoader:
                 'ui_rois': {
                     'hp_bar': [31, 680, 145, 14],
                     'mp_bar': [784, 680, 145, 14],
-                    'inventory_weight_bar': [812, 618, 110, 20],
-                    'vendor_flag': [650, 150, 170, 70],
-                    'potion_flag': [118, 606, 120, 44],
+                    'inventory_flag': [540, 58, 250, 24],
+                    'inventory_weight_bar': [523, 546, 160, 20],
+                    'vendor_flag': [84, 606, 372, 46],
+                    'potion_flag': [130, 632, 48, 42],
                 },
                 'guard_thresholds': {
                     'hp_critical_threshold': 0.25,

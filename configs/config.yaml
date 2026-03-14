@@ -179,9 +179,10 @@ dungeon_run:
   ui_rois:
     hp_bar: [31, 680, 145, 14]
     mp_bar: [784, 680, 145, 14]
-    inventory_weight_bar: [812, 618, 110, 20]
-    vendor_flag: [650, 150, 170, 70]
-    potion_flag: [118, 606, 120, 44]
+    inventory_flag: [540, 58, 250, 24]
+    inventory_weight_bar: [523, 546, 160, 20]
+    vendor_flag: [84, 606, 372, 46]
+    potion_flag: [130, 632, 48, 42]
 
   # 守护层阈值
   guard_thresholds:

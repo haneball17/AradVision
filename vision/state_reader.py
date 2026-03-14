@@ -35,6 +35,7 @@ class StateReader:
         """读取当前 UI 状态。"""
         hp_bar = self._extract_roi(frame, self.config.hp_bar)
         mp_bar = self._extract_roi(frame, self.config.mp_bar)
+        inventory_flag = self._extract_roi(frame, self.config.inventory_flag)
         weight_bar = self._extract_roi(frame, self.config.inventory_weight_bar)
         vendor_flag = self._extract_roi(frame, self.config.vendor_flag)
         potion_flag = self._extract_roi(frame, self.config.potion_flag)
@@ -45,8 +46,17 @@ class StateReader:
             skill_cds={},
         )
 
-        inventory_weight_ratio = self._brightness_fill_ratio(weight_bar)
-        vendor_ui_open = self._dominant_ratio(vendor_flag, 1) >= 0.42 and self._mean_intensity(vendor_flag) >= 80
+        inventory_ui_open = self._dark_ratio(inventory_flag, 50) >= 0.50
+        vendor_ui_open = (
+            self._dominant_ratio(vendor_flag, 0) >= 0.35
+            and self._mean_intensity(vendor_flag) >= 60
+        )
+        if inventory_ui_open or vendor_ui_open:
+            inventory_weight_ratio = self._bar_fill_ratio(weight_bar, 2)
+        else:
+            inventory_weight_ratio = 0.0
+
+        potion_bright_ratio = self._bright_ratio(potion_flag, 110)
         potion_signal = self._mean_intensity(potion_flag)
 
         return StateReadResult(
@@ -54,8 +64,8 @@ class StateReader:
             inventory_weight_ratio=inventory_weight_ratio,
             free_slots=999,
             vendor_ui_open=vendor_ui_open,
-            potion_cd_ready=potion_signal >= 10,
-            potion_stock_available=potion_signal >= 3,
+            potion_cd_ready=potion_bright_ratio >= 0.30,
+            potion_stock_available=potion_signal >= 45,
         )
 
     @staticmethod
@@ -91,6 +101,20 @@ class StateReader:
         columns = region.mean(axis=0)
         brightness = columns.mean(axis=1)
         return float((brightness >= 40).mean())
+
+    @staticmethod
+    def _bright_ratio(region: np.ndarray, threshold: float) -> float:
+        if region.size == 0:
+            return 0.0
+        gray = region.mean(axis=2)
+        return float((gray >= threshold).mean())
+
+    @staticmethod
+    def _dark_ratio(region: np.ndarray, threshold: float) -> float:
+        if region.size == 0:
+            return 0.0
+        gray = region.mean(axis=2)
+        return float((gray < threshold).mean())
 
     @staticmethod
     def _mean_intensity(region: np.ndarray) -> float:

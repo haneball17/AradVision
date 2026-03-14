@@ -33,6 +33,7 @@ from logic.guard_layer import GuardLayer
 from logic.route_run_controller import RouteRunController
 from vision.main_view_reader import MainViewReader
 from vision.minimap_reader import MinimapReader
+from vision.state_reader import StateReader
 
 
 def _make_config() -> AppConfig:
@@ -66,6 +67,7 @@ def _make_config() -> AppConfig:
             ui_rois=UIRoisConfig(
                 hp_bar=ROI(10, 90, 20, 4),
                 mp_bar=ROI(40, 90, 20, 4),
+                inventory_flag=ROI(60, 50, 20, 6),
                 inventory_weight_bar=ROI(70, 90, 20, 4),
                 vendor_flag=ROI(85, 10, 10, 10),
                 potion_flag=ROI(85, 25, 10, 10),
@@ -167,6 +169,41 @@ def _apply_hp(frame: np.ndarray, hp_ratio: float) -> np.ndarray:
     if filled > 0:
         updated[90:94, 10:10 + filled] = (0, 0, 255)
     return updated
+
+
+def test_state_reader_should_gate_inventory_weight_vendor_and_potion():
+    reader = StateReader(_make_config().dungeon_run.ui_rois)
+
+    inventory_frame = _base_frame()
+    inventory_frame[50:56, 60:80] = (10, 10, 10)  # inventory_flag 暗，表示背包已开
+    inventory_frame[90:94, 70:90] = (0, 0, 0)
+    inventory_frame[90:94, 70:82] = (0, 0, 255)  # 60% 红条
+    inventory_frame[25:35, 85:95] = (255, 255, 255)
+    state = reader.read(inventory_frame)
+    assert state.inventory_weight_ratio == pytest.approx(0.6, rel=1e-2)
+    assert state.vendor_ui_open is False
+    assert state.potion_cd_ready is True
+    assert state.potion_stock_available is True
+
+    vendor_frame = _base_frame()
+    vendor_frame[10:20, 85:95] = (255, 120, 20)  # 蓝色按钮条信号
+    vendor_frame[90:94, 70:90] = (0, 0, 0)
+    vendor_frame[90:94, 70:88] = (0, 0, 255)  # 90% 红条
+    state = reader.read(vendor_frame)
+    assert state.vendor_ui_open is True
+    assert state.inventory_weight_ratio == pytest.approx(0.9, rel=1e-2)
+
+    closed_frame = _base_frame()
+    closed_frame[50:56, 60:80] = (255, 255, 255)  # inventory_flag 亮，表示未开背包
+    closed_frame[90:94, 70:90] = (0, 0, 255)      # 即便下方有红色，也不应误读为重量
+    state = reader.read(closed_frame)
+    assert state.inventory_weight_ratio == 0.0
+
+    cooldown_frame = _base_frame()
+    cooldown_frame[25:35, 85:95] = (70, 70, 70)  # 药水冷却灰态，但仍有库存
+    state = reader.read(cooldown_frame)
+    assert state.potion_cd_ready is False
+    assert state.potion_stock_available is True
 
 
 def test_main_view_reader_should_classify_states():

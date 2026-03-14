@@ -108,6 +108,7 @@ def test_dungeon_run_should_reject_roi_outside_capture_bounds(tmp_path):
                 "ui_rois": {
                     "hp_bar": [10, 60, 10, 10],
                     "mp_bar": [30, 60, 10, 10],
+                    "inventory_flag": [45, 10, 10, 10],
                     "inventory_weight_bar": [50, 60, 10, 10],
                     "vendor_flag": [60, 10, 10, 10],
                     "potion_flag": [70, 10, 10, 10],
