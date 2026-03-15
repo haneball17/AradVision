@@ -49,6 +49,16 @@ AradVision is a Python project organized by domain modules:
 - `docs/archive/` 下的归档文档、历史阶段文档和非主线专题，默认不得继续出现在 `README.md`、`docs/README.md`、启动/测试指南、脚本提示语或新的专题方案文档的主索引中。
 - 如确需引用归档文档，必须明确标注“历史参考”或“归档参考”，并说明该文档不能作为当前实现事实来源。
 
+## Current Mainline And Evolution Constraints
+- 当前默认交付目标仍是《歼灭追击战》固定路线 MVP。未获明确指示时，不得把主链路改写为通用 YOLO 主链路或 LLM 主链路。
+- 已适配副本优先采用 `ROI + 固定流程`；未适配副本优先采用 `YOLO + 通用流程`。
+- 静态 UI 元素优先采用固定 ROI / 规则法；动态空间目标优先采用 YOLO。
+- 未来接入 LLM 时，LLM 只允许位于高层决策层，负责任务选择、链路切换、异常恢复和策略建议；不得直接输出底层键鼠动作，不得绕过 `GuardLayer`、熔断和本地控制层。
+- 架构演进默认采用“外扩式重构”，优先新增抽象和适配层，不为跨游戏复用而推倒当前 DNF MVP 资产。
+- `FixedRoutePipeline`、`MainViewReader`、`MinimapReader`、`StateReader`、ROI 资产、`room_scripts` 和实机分析文档默认视为可复用资产；除非有明确证据，不应整体废弃或重写。
+- 后续若引入多副本支持，优先采用注册式入口，避免把副本特定逻辑继续散落到 `main.py`、UI 线程或全局分支判断中。
+- 文档和注释必须明确区分“当前已实现事实”“中期规划”“长期预留”；未实现能力不得写成已落地事实。
+
 ## Security & Configuration Tips
 - Do not commit runtime artifacts (`__pycache__/`, logs, temporary files) or private/local configs.
 - Keep emergency stop behavior (`F12`) enabled in integration and real-run scenarios.
